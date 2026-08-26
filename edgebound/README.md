@@ -1,5 +1,20 @@
 # EDGEBOUND — PatternRuntime Objectives
 
+## Playable vertical slice
+
+The repository now includes a browser-playable **MOVING_PLATFORM + WIND** slice.
+It uses the existing `SituationRuntime` and deterministic data model to provide a
+single-button timing challenge with a live wind indicator, perfect-landing zone,
+reward feedback, particles, slow motion, screen shake, and retry flow.
+
+```bash
+npx tsc -p tsconfig.json
+python3 -m http.server 4173
+```
+
+Open <http://localhost:4173>. Use **tap/click** or **Space / Up Arrow** to jump.
+After a failed landing, retry recreates the same authored situation.
+
 This slice adds a unified `PatternRuntime` contract where each gameplay pattern owns its objective lifecycle.
 
 ## Unified contract
