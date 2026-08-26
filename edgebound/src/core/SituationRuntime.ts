@@ -91,7 +91,7 @@ export class SituationRuntime {
     }
 
     this.player.update(dt);
-    this.checkLanding(dt);
+    this.checkLanding();
 
     // Some objectives (e.g. FALLING_PLATFORM) complete after landing
     // and a short survival window, without another landing event.
@@ -109,11 +109,11 @@ export class SituationRuntime {
     return this.player.jump();
   }
 
-  private checkLanding(dt: number): void {
+  private checkLanding(): void {
     if (this.player.state.velocityY < 0) return;
 
     const bottom = this.player.getBottom();
-    const previousBottom = bottom - this.player.state.velocityY * dt;
+    const previousBottom = bottom - this.player.state.velocityY * (1 / 120);
 
     for (const p of this.pattern.getPlatforms()) {
       if (!p.active) continue;
@@ -123,7 +123,7 @@ export class SituationRuntime {
 
       this.player.landOn(p.x, p.y);
       const accuracy = this.calculateAccuracy(p.x, p.width);
-      const quality = this.getLandingQuality(p, accuracy);
+      const quality = this.getLandingQuality(accuracy);
 
       const events = this.pattern.onPlayerLanded(p.id, this.elapsed);
 
@@ -143,13 +143,8 @@ export class SituationRuntime {
     return Math.max(0, 1 - distance / (platformWidth / 2));
   }
 
-  private getLandingQuality(
-    platform: { x: number; width: number },
-    accuracy: number,
-  ): LandingQuality {
-    const perfectHalfWidth = Math.min(this.data.pattern.perfectWidth, platform.width) / 2;
-    const distance = Math.abs(this.player.getCenterX() - (platform.x + platform.width / 2));
-    if (distance <= perfectHalfWidth) return 'PERFECT';
+  private getLandingQuality(accuracy: number): LandingQuality {
+    if (accuracy >= 0.82) return 'PERFECT';
     if (accuracy >= 0.25) return 'GOOD';
     return 'NONE';
   }

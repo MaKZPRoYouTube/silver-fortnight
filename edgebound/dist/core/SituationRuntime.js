@@ -71,7 +71,7 @@ export class SituationRuntime {
             this.player.setHorizontalVelocity(Math.max(-480, Math.min(480, direction * 220 + windVelocity)));
         }
         this.player.update(dt);
-        this.checkLanding(dt);
+        this.checkLanding();
         // Some objectives (e.g. FALLING_PLATFORM) complete after landing
         // and a short survival window, without another landing event.
         if (this.pattern.isComplete() && this.state === 'RUNNING') {
@@ -86,11 +86,11 @@ export class SituationRuntime {
             return false;
         return this.player.jump();
     }
-    checkLanding(dt) {
+    checkLanding() {
         if (this.player.state.velocityY < 0)
             return;
         const bottom = this.player.getBottom();
-        const previousBottom = bottom - this.player.state.velocityY * dt;
+        const previousBottom = bottom - this.player.state.velocityY * (1 / 120);
         for (const p of this.pattern.getPlatforms()) {
             if (!p.active)
                 continue;
@@ -100,7 +100,7 @@ export class SituationRuntime {
                 continue;
             this.player.landOn(p.x, p.y);
             const accuracy = this.calculateAccuracy(p.x, p.width);
-            const quality = this.getLandingQuality(p, accuracy);
+            const quality = this.getLandingQuality(accuracy);
             const events = this.pattern.onPlayerLanded(p.id, this.elapsed);
             // A pattern owns its objective. Runtime only resolves the
             // situation when that objective is actually complete.
@@ -115,10 +115,8 @@ export class SituationRuntime {
         const distance = Math.abs(this.player.getCenterX() - (platformX + platformWidth / 2));
         return Math.max(0, 1 - distance / (platformWidth / 2));
     }
-    getLandingQuality(platform, accuracy) {
-        const perfectHalfWidth = Math.min(this.data.pattern.perfectWidth, platform.width) / 2;
-        const distance = Math.abs(this.player.getCenterX() - (platform.x + platform.width / 2));
-        if (distance <= perfectHalfWidth)
+    getLandingQuality(accuracy) {
+        if (accuracy >= 0.82)
             return 'PERFECT';
         if (accuracy >= 0.25)
             return 'GOOD';
