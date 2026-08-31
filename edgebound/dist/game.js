@@ -1,4 +1,4 @@
-import { SituationRuntime } from './core/SituationRuntime';
+import { SituationRuntime } from './core/SituationRuntime.js';
 const canvas = document.querySelector('#game');
 const context = canvas.getContext('2d');
 const startPanel = document.querySelector('#start-panel');
@@ -23,8 +23,14 @@ const challenge = {
 };
 let runtime = new SituationRuntime(challenge);
 let active = false, previous = 0, score = 0, slowMo = 0, shake = 0;
+let resultTimer = null;
 let particles = [];
-function resize() { const ratio = Math.min(devicePixelRatio || 1, 2); canvas.width = innerWidth * ratio; canvas.height = innerHeight * ratio; context.setTransform(ratio, 0, 0, ratio, 0, 0); }
+function resize() {
+    const ratio = Math.min(devicePixelRatio || 1, 2);
+    canvas.width = Math.max(1, Math.round(canvas.clientWidth * ratio));
+    canvas.height = Math.max(1, Math.round(canvas.clientHeight * ratio));
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+}
 addEventListener('resize', resize);
 resize();
 function playTone(frequency, duration, type = 'sine') {
@@ -48,40 +54,68 @@ function burst(x, y, color, count) { for (let i = 0; i < count; i++) {
     particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: .5 + Math.random() * .4, max: 1, color, size: 2 + Math.random() * 4 });
 } }
 function showFeedback(text) { feedback.textContent = text; feedback.classList.remove('show'); void feedback.offsetWidth; feedback.classList.add('show'); }
-function begin() { runtime = new SituationRuntime(challenge); runtime.start(); active = true; slowMo = 0; particles = []; startPanel.classList.remove('visible'); resultPanel.classList.remove('visible'); objective.textContent = 'TIME THE MOVING PLATFORM'; }
+function begin() {
+    if (resultTimer !== null)
+        window.clearTimeout(resultTimer);
+    resultTimer = null;
+    runtime = new SituationRuntime(challenge);
+    runtime.start();
+    active = true;
+    slowMo = 0;
+    particles = [];
+    startPanel.classList.remove('visible');
+    resultPanel.classList.remove('visible');
+    objective.textContent = runtime.pattern.getObjective().title.toUpperCase();
+}
 function jump() { if (!active)
     return; if (runtime.jump()) {
     playTone(300, .09, 'triangle');
     burst(runtime.player.getCenterX(), runtime.player.getBottom(), '#81d9d0', 5);
 } }
-function finish() { active = false; const result = runtime.result; const perfect = result.landingQuality === 'PERFECT'; if (runtime.state === 'SUCCESS') {
-    score += result.coins;
-    if (perfect) {
-        slowMo = .35;
-        shake = 8;
-        showFeedback('PERFECT!');
-        burst(runtime.player.getCenterX(), runtime.player.getBottom(), '#ffd372', 28);
-        playTone(660, .25, 'sine');
+function finish() {
+    active = false;
+    const result = runtime.result;
+    if (!result)
+        return;
+    const perfect = result.landingQuality === 'PERFECT';
+    const good = result.landingQuality === 'GOOD';
+    if (runtime.state === 'SUCCESS') {
+        score += result.coins;
+        if (perfect) {
+            slowMo = .35;
+            shake = 8;
+            showFeedback('PERFECT!');
+            burst(runtime.player.getCenterX(), runtime.player.getBottom(), '#ffd372', 28);
+            playTone(660, .25, 'sine');
+        }
+        else if (good) {
+            showFeedback('GOOD');
+            burst(runtime.player.getCenterX(), runtime.player.getBottom(), '#81d9d0', 16);
+            playTone(460, .16, 'sine');
+        }
+        else {
+            showFeedback('EDGE HIT');
+            burst(runtime.player.getCenterX(), runtime.player.getBottom(), '#91a2c8', 12);
+            playTone(360, .12, 'triangle');
+        }
+        resultKicker.textContent = perfect ? 'CENTER CORE HIT' : good ? 'LANDING CONFIRMED' : 'JUST MADE IT';
+        resultTitle.textContent = perfect ? 'PERFECT!' : good ? 'GOOD.' : 'EDGE HIT.';
+        resultReward.textContent = `+${result.coins} COINS  ·  STREAK ×${result.streak}`;
     }
     else {
-        showFeedback('GOOD');
-        burst(runtime.player.getCenterX(), runtime.player.getBottom(), '#81d9d0', 16);
-        playTone(460, .16, 'sine');
+        shake = 10;
+        showFeedback('MISSED');
+        playTone(115, .3, 'sawtooth');
+        resultKicker.textContent = 'RUN FAILED';
+        resultTitle.textContent = 'TRY AGAIN.';
+        resultReward.textContent = 'SAME WIND. BETTER TIMING.';
     }
-    resultKicker.textContent = perfect ? 'CENTER CORE HIT' : 'LANDING CONFIRMED';
-    resultTitle.textContent = perfect ? 'PERFECT!' : 'GOOD.';
-    resultReward.textContent = `+${result.coins} COINS  ·  STREAK ×${result.streak}`;
+    scoreLabel.textContent = String(score).padStart(4, '0');
+    streakLabel.textContent = `STREAK ×${runtime.streak}`;
+    resultTimer = window.setTimeout(() => { resultPanel.classList.add('visible'); resultTimer = null; }, 700);
 }
-else {
-    shake = 10;
-    showFeedback('MISSED');
-    playTone(115, .3, 'sawtooth');
-    resultKicker.textContent = 'RUN FAILED';
-    resultTitle.textContent = 'TRY AGAIN.';
-    resultReward.textContent = 'SAME WIND. BETTER TIMING.';
-} scoreLabel.textContent = String(score).padStart(4, '0'); streakLabel.textContent = `STREAK ×${runtime.streak}`; setTimeout(() => resultPanel.classList.add('visible'), 700); }
 function draw() {
-    const width = innerWidth, height = innerHeight;
+    const width = canvas.clientWidth, height = canvas.clientHeight;
     context.clearRect(0, 0, width, height);
     const gradient = context.createLinearGradient(0, 0, 0, height);
     gradient.addColorStop(0, '#121d3d');
@@ -89,7 +123,6 @@ function draw() {
     gradient.addColorStop(1, '#050714');
     context.fillStyle = gradient;
     context.fillRect(0, 0, width, height);
-    const target = runtime.platforms[0];
     const cameraX = Math.max(0, runtime.player.getCenterX() - width * .34);
     const baseY = height - 165;
     const offsetX = (Math.random() - .5) * shake;
@@ -103,19 +136,24 @@ function draw() {
         context.lineTo(x - 120, 380);
         context.stroke();
     }
-    if (target) {
-        const perfect = Math.min(challenge.pattern.perfectWidth, target.width);
-        context.shadowBlur = 18;
+    for (const platform of runtime.platforms) {
+        if (!platform.active)
+            continue;
+        const perfect = Math.min(runtime.data.pattern.perfectWidth, platform.width);
+        const isTarget = platform.id === runtime.pattern.getObjective().currentTargetId;
+        context.shadowBlur = isTarget ? 18 : 0;
         context.shadowColor = '#4ddbc9';
-        context.fillStyle = '#77d9ce';
-        context.fillRect(target.x, target.y, target.width, target.height);
+        context.fillStyle = isTarget ? '#77d9ce' : '#5379a2';
+        context.fillRect(platform.x, platform.y, platform.width, platform.height);
         context.shadowBlur = 0;
         context.fillStyle = '#182849';
-        context.fillRect(target.x + 5, target.y + 5, target.width - 10, target.height - 10);
-        context.fillStyle = '#ffd372';
-        context.fillRect(target.x + target.width / 2 - perfect / 2, target.y + 5, perfect, 4);
+        context.fillRect(platform.x + 5, platform.y + 5, platform.width - 10, platform.height - 10);
+        if (isTarget) {
+            context.fillStyle = '#ffd372';
+            context.fillRect(platform.x + platform.width / 2 - perfect / 2, platform.y + 5, perfect, 4);
+        }
         context.fillStyle = 'rgba(255,255,255,.55)';
-        context.fillRect(target.x, target.y, target.width, 2);
+        context.fillRect(platform.x, platform.y, platform.width, 2);
     }
     const p = runtime.player.state;
     const airborne = !p.grounded;
@@ -145,7 +183,7 @@ function loop(time) { const rawDt = Math.min(.033, (time - previous) / 1000 || 0
     particle.x += particle.vx * rawDt;
     particle.y += particle.vy * rawDt;
     particle.vy += 260 * rawDt;
-} particles = particles.filter((p) => p.life > 0); const wind = runtime.windStrength; windArrow.textContent = challenge.modifiers[0]?.direction === -1 ? '←' : '→'; windFill.style.width = `${Math.min(100, wind)}%`; draw(); requestAnimationFrame(loop); }
+} particles = particles.filter((p) => p.life > 0); const wind = runtime.windStrength; const windModifier = runtime.data.modifiers.find((modifier) => modifier.type === 'WIND'); windArrow.textContent = windModifier?.direction === -1 ? '←' : '→'; windFill.style.width = `${Math.min(100, wind)}%`; draw(); requestAnimationFrame(loop); }
 startButton.addEventListener('click', begin);
 retryButton.addEventListener('click', begin);
 canvas.addEventListener('pointerdown', jump);

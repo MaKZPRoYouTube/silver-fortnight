@@ -1,4 +1,4 @@
-import { PlayerState } from './types';
+import { PlayerState } from './types.js';
 
 export class Player {
   public readonly state: PlayerState = {

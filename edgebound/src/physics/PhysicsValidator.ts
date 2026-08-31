@@ -1,4 +1,4 @@
-import { ModifierData, PatternData, SituationData } from '../core/types';
+import { ModifierData, PatternData, SituationData } from '../core/types.js';
 import {
   DEFAULT_PHYSICS,
   PhysicsParams,
@@ -6,7 +6,7 @@ import {
   maxJumpHeight,
   airtimeToHeight,
   simulateJump,
-} from './PhysicsModel';
+} from './PhysicsModel.js';
 
 export interface ValidationIssue {
   code: string;

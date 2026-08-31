@@ -1,6 +1,6 @@
-import { DifficultyTier, ModifierData, PatternData, PatternType } from '../core/types';
-import { SeededRandom } from './Random';
-import { PATTERN_LIBRARY, PatternRecipe } from '../patterns/PatternLibrary';
+import { DifficultyTier, ModifierData, PatternData, PatternType } from '../core/types.js';
+import { SeededRandom } from './Random.js';
+import { PATTERN_LIBRARY, PatternRecipe } from '../patterns/PatternLibrary.js';
 
 export interface SegmentHistoryItem {
   pattern: PatternType;

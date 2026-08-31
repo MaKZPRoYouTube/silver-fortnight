@@ -1,4 +1,4 @@
-import { LandingQuality, Reward } from '../core/types';
+import { LandingQuality, Reward } from '../core/types.js';
 
 export class RewardCalculator {
   calculate(reward: Reward, quality: LandingQuality, streak: number) {

@@ -1,4 +1,4 @@
-import { DifficultyTier, Reward } from '../core/types';
+import { DifficultyTier, Reward } from '../core/types.js';
 
 export class RewardFactory {
   create(tier: DifficultyTier): Reward {

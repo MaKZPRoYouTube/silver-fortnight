@@ -1,6 +1,6 @@
-import { PhysicsValidator } from '../physics/PhysicsValidator';
-import { PatternComposer } from './PatternComposer';
-import { AdvancedSituationGenerator } from './AdvancedSituationGenerator';
+import { PhysicsValidator } from '../physics/PhysicsValidator.js';
+import { PatternComposer } from './PatternComposer.js';
+import { AdvancedSituationGenerator } from './AdvancedSituationGenerator.js';
 
 const generator = new AdvancedSituationGenerator(
   new PatternComposer(),

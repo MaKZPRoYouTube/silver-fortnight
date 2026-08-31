@@ -1,4 +1,4 @@
-import { PATTERN_LIBRARY } from '../patterns/PatternLibrary';
+import { PATTERN_LIBRARY } from '../patterns/PatternLibrary.js';
 const DEFAULT_RULES = {
     maxSamePatternInRow: 2,
     maxWindPatternsInLastN: 2,

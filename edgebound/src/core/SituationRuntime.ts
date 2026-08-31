@@ -1,10 +1,10 @@
-import { DifficultyTier, SituationData, SituationResult, SituationState, LandingQuality } from './types';
-import { Player } from './Player';
-import { AdvancedSituationGenerator } from '../generation/AdvancedSituationGenerator';
-import { SegmentHistoryItem } from '../generation/PatternComposer';
-import { PatternRuntime, spawnPattern } from '../patterns/PatternRuntime';
-import { WindModifier } from '../modifiers/WindModifier';
-import { RewardCalculator } from '../economy/RewardCalculator';
+import { DifficultyTier, SituationData, SituationResult, SituationState, LandingQuality } from './types.js';
+import { Player } from './Player.js';
+import { AdvancedSituationGenerator } from '../generation/AdvancedSituationGenerator.js';
+import { SegmentHistoryItem } from '../generation/PatternComposer.js';
+import { PatternRuntime, spawnPattern } from '../patterns/PatternRuntime.js';
+import { WindModifier } from '../modifiers/WindModifier.js';
+import { RewardCalculator } from '../economy/RewardCalculator.js';
 
 export interface SituationRuntimeOptions {
   generator?: AdvancedSituationGenerator;
@@ -86,7 +86,7 @@ export class SituationRuntime {
     } else {
       const direction = Math.sign(target.x + target.width / 2 - this.player.getCenterX()) || 1;
       this.player.setHorizontalVelocity(
-        Math.max(-480, Math.min(480, direction * 220 + windVelocity)),
+        Math.max(-480, Math.min(480, direction * 480 + windVelocity)),
       );
     }
 

@@ -1,7 +1,7 @@
-import { Player } from './Player';
-import { spawnPattern } from '../patterns/PatternRuntime';
-import { WindModifier } from '../modifiers/WindModifier';
-import { RewardCalculator } from '../economy/RewardCalculator';
+import { Player } from './Player.js';
+import { spawnPattern } from '../patterns/PatternRuntime.js';
+import { WindModifier } from '../modifiers/WindModifier.js';
+import { RewardCalculator } from '../economy/RewardCalculator.js';
 export class SituationRuntime {
     state = 'INTRO';
     player = new Player();
@@ -68,7 +68,7 @@ export class SituationRuntime {
         }
         else {
             const direction = Math.sign(target.x + target.width / 2 - this.player.getCenterX()) || 1;
-            this.player.setHorizontalVelocity(Math.max(-480, Math.min(480, direction * 220 + windVelocity)));
+            this.player.setHorizontalVelocity(Math.max(-480, Math.min(480, direction * 480 + windVelocity)));
         }
         this.player.update(dt);
         this.checkLanding(dt);
