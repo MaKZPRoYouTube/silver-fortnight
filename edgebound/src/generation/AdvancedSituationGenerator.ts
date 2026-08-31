@@ -1,9 +1,9 @@
-import { DifficultyScaler } from './DifficultyScaler';
-import { DifficultyTier, SituationData } from '../core/types';
-import { SeededRandom } from './Random';
-import { PatternComposer, SegmentHistoryItem } from './PatternComposer';
-import { PhysicsValidator } from '../physics/PhysicsValidator';
-import { RewardFactory } from './RewardFactory';
+import { DifficultyScaler } from './DifficultyScaler.js';
+import { DifficultyTier, SituationData } from '../core/types.js';
+import { SeededRandom } from './Random.js';
+import { PatternComposer, SegmentHistoryItem } from './PatternComposer.js';
+import { PhysicsValidator } from '../physics/PhysicsValidator.js';
+import { RewardFactory } from './RewardFactory.js';
 
 export interface GeneratedSegment {
   data: SituationData;

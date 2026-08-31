@@ -63,11 +63,13 @@ class StaticStepRuntime extends BasePatternRuntime {
 class MovingPlatformRuntime extends BasePatternRuntime {
     data;
     type = 'MOVING_PLATFORM';
-    phase = 0;
+    // Begin at the left edge of the authored travel range so targetX remains the
+    // centre used by generation and physics validation.
+    phase = -Math.PI / 2;
     constructor(data) {
         super();
         this.data = data;
-        this.platforms = [platform('target', data.startX, data.targetY, data.platformWidth, data.platformHeight)];
+        this.platforms = [platform('target', data.targetX - data.distance / 2, data.targetY, data.platformWidth, data.platformHeight)];
         this.objective = { type: 'LAND_ON_TARGET', title: 'Time the moving platform', progress: 0, required: 1, currentTargetId: 'target', completed: false, failed: false };
     }
     update(dt) {
@@ -77,7 +79,7 @@ class MovingPlatformRuntime extends BasePatternRuntime {
             return;
         const oldX = target.x;
         const normalized = (Math.sin(this.phase) + 1) / 2;
-        const nextX = this.data.startX + normalized * this.data.distance;
+        const nextX = this.data.targetX - this.data.distance / 2 + normalized * this.data.distance;
         target.x = nextX;
         target.velocityX = (nextX - oldX) / Math.max(dt, 1e-6);
     }

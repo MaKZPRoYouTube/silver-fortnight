@@ -1,4 +1,4 @@
-import { Difficulty, DifficultyTier } from '../core/types';
+import { Difficulty, DifficultyTier } from '../core/types.js';
 
 export class DifficultyScaler {
   create(tier: DifficultyTier): Difficulty {

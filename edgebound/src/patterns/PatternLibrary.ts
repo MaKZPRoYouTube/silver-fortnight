@@ -1,6 +1,6 @@
-import { DifficultyTier, PatternData, PatternType } from '../core/types';
-import { SeededRandom } from '../generation/Random';
-import { PatternRuntime, spawnPattern } from './PatternRuntime';
+import { DifficultyTier, PatternData, PatternType } from '../core/types.js';
+import { SeededRandom } from '../generation/Random.js';
+import { PatternRuntime, spawnPattern } from './PatternRuntime.js';
 
 export interface PatternRecipe {
   type: PatternType;

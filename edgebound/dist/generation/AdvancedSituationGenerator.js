@@ -1,6 +1,6 @@
-import { DifficultyScaler } from './DifficultyScaler';
-import { SeededRandom } from './Random';
-import { RewardFactory } from './RewardFactory';
+import { DifficultyScaler } from './DifficultyScaler.js';
+import { SeededRandom } from './Random.js';
+import { RewardFactory } from './RewardFactory.js';
 export class AdvancedSituationGenerator {
     composer;
     validator;

@@ -1,4 +1,4 @@
-import { DEFAULT_PHYSICS, maxHorizontalTravel, maxJumpHeight, airtimeToHeight, simulateJump, } from './PhysicsModel';
+import { DEFAULT_PHYSICS, maxHorizontalTravel, maxJumpHeight, airtimeToHeight, simulateJump, } from './PhysicsModel.js';
 export class PhysicsValidator {
     physics;
     constructor(physics = DEFAULT_PHYSICS) {

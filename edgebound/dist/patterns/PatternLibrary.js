@@ -1,4 +1,4 @@
-import { spawnPattern } from './PatternRuntime';
+import { spawnPattern } from './PatternRuntime.js';
 const common = (tier) => ({
     startX: 180,
     startY: 410,
