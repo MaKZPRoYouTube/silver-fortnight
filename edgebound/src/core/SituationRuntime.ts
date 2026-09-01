@@ -1,217 +1,143 @@
-import { DifficultyTier, SituationData, SituationResult, SituationState, LandingQuality } from './types';
-import { Player } from './Player';
-import { AdvancedSituationGenerator } from '../generation/AdvancedSituationGenerator';
-import { SegmentHistoryItem } from '../generation/PatternComposer';
-import { PatternRuntime, spawnPattern } from '../patterns/PatternRuntime';
-import { WindModifier } from '../modifiers/WindModifier';
-import { RewardCalculator } from '../economy/RewardCalculator';
-
-export interface SituationRuntimeOptions {
-  generator?: AdvancedSituationGenerator;
-  seed?: number;
-  difficulty?: DifficultyTier;
-  history?: readonly SegmentHistoryItem[];
-  currentStreak?: number;
+export interface Platform {
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    active: boolean;
+    isTarget: boolean;
+    velocityX?: number;
+    velocityY?: number;
 }
 
-export class SituationRuntime {
-  public state: SituationState = 'INTRO';
-  public readonly player = new Player();
-  public result: SituationResult | null = null;
-  public streak = 0;
-  public elapsed = 0;
-  public data: SituationData;
-  public pattern: PatternRuntime;
-  public wind: WindModifier | null = null;
+export interface PatternData {
+    type: 'STATIC_STEP' | 'MOVING_PLATFORM' | 'FALLING_PLATFORM' | string;
+    startX: number;
+    startY: number;
+    targetX?: number;
+    targetY: number;
+    platformWidth?: number;
+    perfectWidth?: number;
+    speed?: number;
+    range?: number;
+}
 
-  private readonly rewardCalculator = new RewardCalculator();
-  private readonly generator?: AdvancedSituationGenerator;
-  private readonly seed?: number;
-  private readonly difficulty?: DifficultyTier;
-  private readonly history: readonly SegmentHistoryItem[];
+export interface PatternRuntime {
+    platforms: Platform[];
+    getPlatforms(): Platform[];
+    getTargetPlatform(): Platform;
+    update(dt: number, time: number): void;
+    onPlayerLanded(platformId: string, time?: number): void;
+    isComplete(): boolean;
+    isFailed(): boolean;
+}
 
-  constructor(dataOrOptions: SituationData | SituationRuntimeOptions) {
-    if ('pattern' in dataOrOptions) {
-      this.data = dataOrOptions;
-      this.history = [];
-      if ((dataOrOptions as any).currentStreak !== undefined) {
-        this.streak = (dataOrOptions as any).currentStreak;
-      }
-    } else {
-      this.generator = dataOrOptions.generator;
-      this.seed = dataOrOptions.seed;
-      this.difficulty = dataOrOptions.difficulty;
-      this.history = dataOrOptions.history ?? [];
-      this.streak = dataOrOptions.currentStreak ?? 0;
+function createPlatform(id: string, x: number, y: number, width: number, height: number = 16, isTarget: boolean = false): Platform {
+    return { id, x, y, width, height, active: true, isTarget, velocityX: 0, velocityY: 0 };
+}
 
-      if (!this.generator || this.seed === undefined || this.difficulty === undefined) {
-        throw new Error('Generated SituationRuntime requires generator, seed and difficulty');
-      }
-      this.data = this.generator.generate(this.seed, this.difficulty, this.history).data;
+// 1. STATIC_STEP: Старт слева + Цель справа (неподвижная)
+export class StaticStepRuntime implements PatternRuntime {
+    public platforms: Platform[];
+    private completed: boolean = false;
+
+    constructor(public readonly data: PatternData) {
+        const startX = data.startX ?? 120;
+        const targetX = data.targetX ?? 420;
+
+        this.platforms = [
+            createPlatform('start', startX, data.startY, 120, 16, false),
+            createPlatform('target', targetX, data.targetY, data.platformWidth ?? 110, 16, true)
+        ];
     }
 
-    this.pattern = spawnPattern(this.data.pattern);
-    this.createModifiers();
-  }
+    public update(_dt: number, _time: number): void {}
+    public getPlatforms(): Platform[] { return this.platforms; }
+    public getTargetPlatform(): Platform { return this.platforms.find(p => p.isTarget) ?? this.platforms[1]; }
+    public onPlayerLanded(id: string): void { if (id === 'target') this.completed = true; }
+    public isComplete(): boolean { return this.completed; }
+    public isFailed(): boolean { return false; }
+}
 
-  private createModifiers(): void {
-    const wind = this.data.modifiers?.find((m: any) => m.type === 'WIND');
-    if (wind) {
-      this.wind = new WindModifier({
-        type: 'WIND',
-        direction: wind.direction ?? 1,
-        strength: wind.strength ?? 60,
-        variation: 0.12,
-      });
-    }
-  }
+// 2. MOVING_PLATFORM: Старт слева + Цель справа (летает влево-вправо)
+export class MovingPlatformRuntime implements PatternRuntime {
+    public platforms: Platform[];
+    private phase: number = 0;
+    private baseTargetX: number;
+    private completed: boolean = false;
 
-  public start(): void {
-    this.state = 'RUNNING';
-    this.result = null;
-    this.elapsed = 0;
+    constructor(public readonly data: PatternData) {
+        const startX = data.startX ?? 120;
+        this.baseTargetX = data.targetX ?? 420;
 
-    // Ищем стартовую платформу
-    const startP = this.pattern.getPlatforms().find((p: any) => p.id === 'start') || this.pattern.getPlatforms()[0];
-    
-    // ✅ Ставим игрока надежно сверху стартовой платформы
-    if (startP) {
-      this.player.state.x = startP.x + 20;
-      this.player.state.y = startP.y - this.player.state.height;
-    } else {
-      this.player.state.x = this.data.pattern.startX;
-      this.player.state.y = this.data.pattern.startY - this.player.state.height;
+        this.platforms = [
+            createPlatform('start', startX, data.startY, 120, 16, false),
+            createPlatform('target', this.baseTargetX, data.targetY, data.platformWidth ?? 100, 16, true)
+        ];
     }
 
-    this.player.state.velocityX = 0;
-    this.player.state.velocityY = 0;
-    this.player.state.grounded = true;
-  }
+    public update(dt: number, _time: number): void {
+        this.phase += dt * (this.data.speed ?? 1.8);
+        const target = this.platforms.find(p => p.isTarget);
+        if (!target) return;
 
-  public update(dt: number): void {
-    if (this.state !== 'RUNNING') return;
-
-    this.elapsed += dt;
-    this.pattern.update(dt, this.elapsed);
-    this.wind?.update(this.elapsed);
-
-    const windVelocity = this.wind?.getHorizontalVelocity() ?? 0;
-
-    // ✅ Пока игрок стоит на старте — он никуда не двигается и не падает
-    if (this.player.state.grounded) {
-      this.player.setHorizontalVelocity(0);
-    } else {
-      // В полете летит вперед + снос ветром
-      const forwardSpeed = 340;
-      const targetVx = forwardSpeed + windVelocity;
-      this.player.setHorizontalVelocity(Math.max(-500, Math.min(500, targetVx)));
-      
-      // Проверяем приземление только когда игрок реально летит
-      this.checkLanding(dt);
+        const range = this.data.range ?? 65;
+        const oldX = target.x;
+        target.x = this.baseTargetX + Math.sin(this.phase) * range;
+        target.velocityX = (target.x - oldX) / dt;
     }
 
-    this.player.update(dt);
+    public getPlatforms(): Platform[] { return this.platforms; }
+    public getTargetPlatform(): Platform { return this.platforms.find(p => p.isTarget) ?? this.platforms[1]; }
+    public onPlayerLanded(id: string): void { if (id === 'target') this.completed = true; }
+    public isComplete(): boolean { return this.completed; }
+    public isFailed(): boolean { return false; }
+}
 
-    // Падение в бездну
-    if (this.player.state.y > 650 || this.pattern.isFailed()) {
-      this.fail();
-    }
-  }
+// 3. FALLING_PLATFORM: Старт слева + Цель справа (падает после посадки)
+export class FallingPlatformRuntime implements PatternRuntime {
+    public platforms: Platform[];
+    private isFalling: boolean = false;
+    private fallSpeed: number = 0;
+    private completed: boolean = false;
 
-  public jump(): boolean {
-    if (this.state !== 'RUNNING') return false;
-    return this.player.jump();
-  }
+    constructor(public readonly data: PatternData) {
+        const startX = data.startX ?? 120;
+        const targetX = data.targetX ?? 400;
 
-  private checkLanding(dt: number): void {
-    // Приземляемся только при движении вниз
-    if (this.player.state.velocityY <= 0) return;
-
-    const bottom = this.player.getBottom();
-    const prevBottom = bottom - this.player.state.velocityY * dt;
-
-    for (const p of this.pattern.getPlatforms()) {
-      if (!p.active) continue;
-
-      const overlapsX = (this.player.state.x + this.player.state.width > p.x) && 
-                        (this.player.state.x < p.x + p.width);
-      const crossesY = (prevBottom <= p.y + 14) && (bottom >= p.y);
-
-      if (!overlapsX || !crossesY) continue;
-
-      // Приземление на платформу
-      this.player.landOn(p.x, p.y);
-      this.pattern.onPlayerLanded(p.id, this.elapsed);
-
-      // ✅ ПОБЕДА засчитывается ТОЛЬКО если это ЦЕЛЕВАЯ платформа (не старт!)
-      if (p.isTarget || p.id === 'target') {
-        const accuracy = this.calculateAccuracy(p.x, p.width);
-        const quality = this.getLandingQuality(p, accuracy);
-        this.complete(accuracy, quality);
-      }
-      return;
-    }
-  }
-
-  private calculateAccuracy(platformX: number, platformWidth: number): number {
-    const distance = Math.abs(this.player.getCenterX() - (platformX + platformWidth / 2));
-    return Math.max(0, 1 - distance / (platformWidth / 2));
-  }
-
-  private getLandingQuality(
-    platform: { x: number; width: number },
-    accuracy: number,
-  ): LandingQuality {
-    const perfectHalfWidth = Math.min(this.data.pattern.perfectWidth ?? (platform.width * 0.35), platform.width) / 2;
-    const distance = Math.abs(this.player.getCenterX() - (platform.x + platform.width / 2));
-    
-    if (distance <= perfectHalfWidth) return 'PERFECT';
-    if (accuracy >= 0.25) return 'GOOD';
-    return 'NONE';
-  }
-
-  private complete(accuracy: number, quality: LandingQuality): void {
-    if (quality === 'PERFECT') {
-      this.streak += 1;
-    } else {
-      this.streak = 0;
+        this.platforms = [
+            createPlatform('start', startX, data.startY, 120, 16, false),
+            createPlatform('target', targetX, data.targetY, data.platformWidth ?? 110, 16, true)
+        ];
     }
 
-    // ✅ Защита от NaN: гарантированно валидные числа
-    const baseCoins = Number(this.data.reward?.baseCoins ?? (this.data.reward as any)?.coins ?? 100) || 100;
-    const perfectBonus = quality === 'PERFECT' ? Number(this.data.reward?.perfectBonus ?? 150) || 150 : 0;
-    const earnedCoins = baseCoins + perfectBonus + (this.streak > 1 ? this.streak * 50 : 0);
+    public update(dt: number, _time: number): void {
+        if (this.isFalling) {
+            this.fallSpeed += 900 * dt;
+            const target = this.platforms.find(p => p.isTarget);
+            if (target) target.y += this.fallSpeed * dt;
+        }
+    }
 
-    this.state = 'SUCCESS';
-    this.result = {
-      state: 'SUCCESS',
-      landingQuality: quality,
-      accuracy,
-      coins: earnedCoins,
-      xp: 50,
-      streak: this.streak,
-    };
-  }
+    public getPlatforms(): Platform[] { return this.platforms; }
+    public getTargetPlatform(): Platform { return this.platforms.find(p => p.isTarget) ?? this.platforms[1]; }
+    public onPlayerLanded(id: string): void {
+        if (id === 'target') {
+            this.isFalling = true;
+            this.completed = true;
+        }
+    }
+    public isComplete(): boolean { return this.completed; }
+    public isFailed(): boolean { return false; }
+}
 
-  private fail(): void {
-    if (this.state !== 'RUNNING') return;
-    this.state = 'FAILED';
-    this.streak = 0;
-    this.result = {
-      state: 'FAILED',
-      landingQuality: 'NONE',
-      accuracy: 0,
-      coins: 0,
-      xp: 0,
-      streak: 0,
-    };
-  }
-
-  public get windStrength(): number {
-    return this.wind?.getStrength() ?? 0;
-  }
-
-  public get platforms() {
-    return this.pattern.getPlatforms();
-  }
+// Фабрика спавна
+export function spawnPattern(data: PatternData): PatternRuntime {
+    switch (data.type) {
+        case 'MOVING_PLATFORM': return new MovingPlatformRuntime(data);
+        case 'FALLING_PLATFORM': return new FallingPlatformRuntime(data);
+        case 'STATIC_STEP':
+        default:
+            return new StaticStepRuntime(data);
+    }
 }
