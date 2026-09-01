@@ -1,4 +1,4 @@
-import { SituationRuntime } from './core/SituationRuntime';
+import { SituationRuntime } from './core/SituationRuntime.js';
 const canvas = document.querySelector('#game');
 const context = canvas.getContext('2d');
 const startPanel = document.querySelector('#start-panel');
