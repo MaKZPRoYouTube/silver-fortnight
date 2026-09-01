@@ -86,7 +86,7 @@ export class SituationRuntime {
     } else {
       const direction = Math.sign(target.x + target.width / 2 - this.player.getCenterX()) || 1;
       this.player.setHorizontalVelocity(
-        Math.max(-480, Math.min(480, direction * 220 + windVelocity)),
+        Math.max(-500, Math.min(500, direction * 340 + windVelocity)),
       );
     }
 
