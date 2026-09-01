@@ -32,7 +32,7 @@ class GameApp {
     private resultReward: HTMLElement;
     private feedbackEl: HTMLElement;
 
-    // Состояние
+    // Состояние игры
     private levelIndex: number = 1;
     private score: number = 0;
     private streak: number = 0;
@@ -40,8 +40,6 @@ class GameApp {
     private hitstop: number = 0;
     private shake: number = 0;
     private particles: Array<{ x: number; y: number; vx: number; vy: number; life: number; color: string }> = [];
-    
-    // Плавные атмосферные линии ветра
     private windStreaks: WindStreak[] = [];
 
     private lastTime: number = 0;
@@ -52,7 +50,6 @@ class GameApp {
         this.canvas.width = 900;
         this.canvas.height = 550;
 
-        // Поиск DOM элементов
         this.startPanel = document.getElementById('start-panel')!;
         this.resultPanel = document.getElementById('result-panel')!;
         this.startButton = document.getElementById('start-button') as HTMLButtonElement;
@@ -88,34 +85,49 @@ class GameApp {
         }
     }
 
+    // 🎮 ГЕНЕРАТОР РАЗНЫХ МЕХАНИК И ПАТТЕРНОВ:
     private setupSituation(): void {
-        // ✅ ЧЕСТНАЯ ДИСТАНЦИЯ: старт на 120, цель на 380 (пропасть 260px)
         const startX = 120;
-        const targetX = 390;
+        const startY = 380;
 
-        // Направление ветра меняется волнами
-        const windDirection = Math.sin(this.levelIndex * 1.5) >= 0 ? 1 : -1;
-        const windStrength = 40 + Math.min(100, this.levelIndex * 10);
+        // Чередование механик по уровням:
+        const patternTypes = [
+            { type: 'STATIC_STEP', title: 'SECTOR 01: BASIC JUMP', width: 130, speed: 0, range: 0 },
+            { type: 'MOVING_PLATFORM', title: 'SECTOR 02: MOVING TARGET', width: 110, speed: 1.8, range: 65 },
+            { type: 'FALLING_PLATFORM', title: 'SECTOR 03: COLLAPSING LEDGE', width: 110, speed: 0, range: 0 },
+            { type: 'MOVING_PLATFORM', title: 'SECTOR 04: WIND GUSTS', width: 95, speed: 2.2, range: 75 },
+            { type: 'STATIC_STEP', title: 'SECTOR 05: NARROW PRECISION', width: 55, speed: 0, range: 0 }, // Узкая платформа
+        ];
+
+        const currentConfig = patternTypes[(this.levelIndex - 1) % patternTypes.length];
+        this.objectiveEl.innerText = currentConfig.title;
+
+        // Динамический ветер (волнами: штиль -> легкий -> порыв -> смена направления)
+        const windCycle = Math.sin(this.levelIndex * 0.8);
+        const windDirection = windCycle >= 0 ? 1 : -1;
+        const windStrength = Math.abs(windCycle) * 110; // Сила колеблется от 0 до 110 px/s
 
         const situationData = {
             pattern: {
-                type: 'MOVING_PLATFORM',
+                type: currentConfig.type,
                 startX: startX,
-                startY: 380,
-                targetX: targetX,
-                targetY: 380,
-                platformWidth: Math.max(80, 130 - this.levelIndex * 3),
-                speed: 1.6 + this.levelIndex * 0.12,
-                range: 65 // Платформа плавно ходит между 325px и 455px
+                startY: startY,
+                targetX: 400,
+                targetY: startY,
+                platformWidth: currentConfig.width,
+                perfectWidth: currentConfig.width * 0.35,
+                speed: currentConfig.speed,
+                range: currentConfig.range
             },
             modifiers: [
                 { type: 'WIND', direction: windDirection, strength: windStrength }
             ],
             difficulty: this.levelIndex,
-            reward: { baseCoins: 100, perfectBonus: 150, xp: 50 }
+            reward: { baseCoins: 100, perfectBonus: 150, xp: 50 },
+            currentStreak: this.streak // Передаем накопленный стрик
         };
 
-        this.runtime = new SituationRuntime(situationData);
+        this.runtime = new SituationRuntime(situationData as any);
         this.runtime.streak = this.streak;
     }
 
@@ -200,27 +212,22 @@ class GameApp {
         const prevState = this.runtime.state;
         this.runtime.update(dt);
 
-        // ✅ ЖИВОЙ ВЕТРОМЕР И СТРЕЛКА:
+        // Ветромер
         const windVel = this.runtime.wind?.getHorizontalVelocity() ?? 0;
         const absWind = Math.abs(windVel);
-        
-        // Стрелка реагирует на направление и пульсирует от силы
         this.windArrow.innerText = windVel >= 0 ? '→' : '←';
-        this.windArrow.style.transform = `scale(${1 + Math.min(0.4, absWind / 250)})`;
-
-        // Заполнение шкалы
-        const windPct = Math.min(100, Math.max(15, (absWind / 150) * 100));
+        const windPct = Math.min(100, Math.max(10, (absWind / 120) * 100));
         this.windFill.style.width = `${windPct}%`;
 
-        // ✅ ПЛАВНЫЕ ЛИНИИ ВЕТРА (без рывков и ускорений):
-        const windSpeedFactor = windVel !== 0 ? windVel * 1.5 : -60;
+        // Линии ветра
+        const windSpeedFactor = windVel !== 0 ? windVel * 1.5 : -50;
         for (const s of this.windStreaks) {
             s.x += windSpeedFactor * s.speed * dt;
             if (s.x > this.canvas.width + 100) s.x = -100;
             if (s.x < -100) s.x = this.canvas.width + 100;
         }
 
-        // Обработка успеха
+        // ✅ ПОБЕДА (Накопление очков и стрика):
         if (prevState === 'RUNNING' && this.runtime.state === 'SUCCESS') {
             const res = this.runtime.result!;
             this.streak = res.streak;
@@ -250,11 +257,12 @@ class GameApp {
             this.retryButton.innerHTML = `NEXT SECTOR <span>↗</span>`;
             this.resultPanel.classList.add('visible');
 
+            // Обновляем реальные цифры в интерфейсе
             this.streakEl.innerText = `STREAK ×${this.streak}`;
             this.scoreEl.innerText = String(this.score).padStart(4, '0');
             this.levelIndex++;
         } 
-        // Обработка провала
+        // ❌ ПАДЕНИЕ:
         else if (prevState === 'RUNNING' && this.runtime.state === 'FAILED') {
             this.audio.playFail();
             this.shake = 9;
@@ -302,10 +310,19 @@ class GameApp {
 
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // 1. Отрисовка плавных атмосферных потоков ветра
-        this.drawWindStreaks();
+        // 1. Потоки ветра
+        this.ctx.save();
+        for (const s of this.windStreaks) {
+            this.ctx.strokeStyle = `rgba(56, 189, 248, ${s.alpha})`;
+            this.ctx.lineWidth = 1.5;
+            this.ctx.beginPath();
+            this.ctx.moveTo(s.x, s.y);
+            this.ctx.lineTo(s.x + s.len, s.y);
+            this.ctx.stroke();
+        }
+        this.ctx.restore();
 
-        // 2. Отрисовка платформ
+        // 2. Платформы
         for (const p of this.runtime.platforms) {
             this.ctx.fillStyle = '#1e293b';
             this.ctx.fillRect(p.x, p.y, p.width, p.height || 16);
@@ -342,19 +359,6 @@ class GameApp {
             this.ctx.fill();
         }
 
-        this.ctx.restore();
-    }
-
-    private drawWindStreaks(): void {
-        this.ctx.save();
-        for (const s of this.windStreaks) {
-            this.ctx.strokeStyle = `rgba(56, 189, 248, ${s.alpha})`;
-            this.ctx.lineWidth = 1.5;
-            this.ctx.beginPath();
-            this.ctx.moveTo(s.x, s.y);
-            this.ctx.lineTo(s.x + s.len, s.y);
-            this.ctx.stroke();
-        }
         this.ctx.restore();
     }
 
