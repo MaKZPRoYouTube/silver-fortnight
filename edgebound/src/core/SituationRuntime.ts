@@ -64,7 +64,7 @@ export class SituationRuntime {
     this.state = 'RUNNING';
     this.result = null;
     this.elapsed = 0;
-    this.player.state.x = this.data.pattern.startX - 30;
+    this.player.state.x = this.data.pattern.startX + 20;
     this.player.state.y = this.data.pattern.startY - this.player.state.height;
     this.player.state.velocityX = 0;
     this.player.state.velocityY = 0;
