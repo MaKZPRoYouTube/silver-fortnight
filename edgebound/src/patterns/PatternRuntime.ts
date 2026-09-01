@@ -137,18 +137,48 @@ class StaticStepRuntime extends BasePatternRuntime {
 class MovingPlatformRuntime extends BasePatternRuntime {
   readonly type = 'MOVING_PLATFORM' as const;
   private phase = 0;
+
   constructor(private readonly data: PatternData) {
     super();
-    this.platforms = [platform('target', data.startX, data.targetY, data.platformWidth, data.platformHeight)];
-    this.objective = { type: 'LAND_ON_TARGET', title: 'Time the moving platform', progress: 0, required: 1, currentTargetId: 'target', completed: false, failed: false };
+
+    // Целевая координата (если в data нет targetX, берем со смещением от старта)
+    const targetBaseX = data.targetX ?? (data.startX + 260);
+    const startPlatformWidth = 120;
+
+    this.platforms = [
+      // 1. Стартовая платформа (неподвижная опора под ногами игрока)
+      platform('start', data.startX - 30, data.startY ?? data.targetY, startPlatformWidth, data.platformHeight ?? 16),
+
+      // 2. Целевая платформа (которая будет летать)
+      platform('target', targetBaseX, data.targetY, data.platformWidth, data.platformHeight ?? 16),
+    ];
+
+    this.objective = {
+      type: 'LAND_ON_TARGET',
+      title: 'Time the moving platform',
+      progress: 0,
+      required: 1,
+      currentTargetId: 'target',
+      completed: false,
+      failed: false,
+    };
   }
+
   update(dt: number): void {
     this.phase += dt * this.data.speed;
-    const target = this.platforms[0];
+    
+    // Ищем целевую платформу по id
+    const target = this.platforms.find((p) => p.id === 'target');
     if (!target) return;
+
     const oldX = target.x;
     const normalized = (Math.sin(this.phase) + 1) / 2;
-    const nextX = this.data.startX + normalized * this.data.distance;
+    
+    // Движение целевой платформы вокруг targetX (или дистанции)
+    const baseTargetX = this.data.targetX ?? (this.data.startX + 260);
+    const range = this.data.distance ?? 100;
+    const nextX = baseTargetX + (normalized - 0.5) * range * 2;
+
     target.x = nextX;
     target.velocityX = (nextX - oldX) / Math.max(dt, 1e-6);
   }
