@@ -60,7 +60,7 @@ export class SituationRuntime {
       this.wind = new WindModifier({
         type: 'WIND',
         direction: wind.direction ?? 1,
-        strength: wind.strength,
+        strength: wind.strength ?? 60,
         variation: 0.12,
       });
     }
@@ -71,13 +71,15 @@ export class SituationRuntime {
     this.result = null;
     this.elapsed = 0;
 
-    // Ставим игрока ровно на стартовую платформу
+    // Ищем стартовую платформу
     const startP = this.pattern.getPlatforms().find((p: any) => p.id === 'start') || this.pattern.getPlatforms()[0];
+    
+    // ✅ Ставим игрока надежно сверху стартовой платформы
     if (startP) {
-      this.player.state.x = startP.x + (startP.width - this.player.state.width) / 2;
+      this.player.state.x = startP.x + 20;
       this.player.state.y = startP.y - this.player.state.height;
     } else {
-      this.player.state.x = this.data.pattern.startX + 20;
+      this.player.state.x = this.data.pattern.startX;
       this.player.state.y = this.data.pattern.startY - this.player.state.height;
     }
 
@@ -95,24 +97,22 @@ export class SituationRuntime {
 
     const windVelocity = this.wind?.getHorizontalVelocity() ?? 0;
 
+    // ✅ Пока игрок стоит на старте — он никуда не двигается и не падает
     if (this.player.state.grounded) {
       this.player.setHorizontalVelocity(0);
     } else {
-      // ✅ Честный полёт вперед с естественным сносом ветра (без магнитов назад)
+      // В полете летит вперед + снос ветром
       const forwardSpeed = 340;
       const targetVx = forwardSpeed + windVelocity;
       this.player.setHorizontalVelocity(Math.max(-500, Math.min(500, targetVx)));
+      
+      // Проверяем приземление только когда игрок реально летит
+      this.checkLanding(dt);
     }
 
     this.player.update(dt);
-    this.checkLanding(dt);
 
-    // Особые условия завершения (например, выживание на падающей платформе)
-    if (this.pattern.isComplete() && this.state === 'RUNNING') {
-      this.complete(1, 'GOOD');
-    }
-
-    // Падение в бездну или провал паттерна
+    // Падение в бездну
     if (this.player.state.y > 650 || this.pattern.isFailed()) {
       this.fail();
     }
@@ -125,30 +125,28 @@ export class SituationRuntime {
 
   private checkLanding(dt: number): void {
     // Приземляемся только при движении вниз
-    if (this.player.state.velocityY < 0) return;
+    if (this.player.state.velocityY <= 0) return;
 
     const bottom = this.player.getBottom();
-    const previousBottom = bottom - this.player.state.velocityY * dt;
+    const prevBottom = bottom - this.player.state.velocityY * dt;
 
     for (const p of this.pattern.getPlatforms()) {
       if (!p.active) continue;
 
-      const overlapsX = this.player.state.x + this.player.state.width > p.x && 
-                        this.player.state.x < p.x + p.width;
-      const crossesY = previousBottom <= p.y + 12 && bottom >= p.y;
+      const overlapsX = (this.player.state.x + this.player.state.width > p.x) && 
+                        (this.player.state.x < p.x + p.width);
+      const crossesY = (prevBottom <= p.y + 14) && (bottom >= p.y);
 
       if (!overlapsX || !crossesY) continue;
 
-      // Игнорируем стартовую платформу в первые доли секунды после прыжка
-      if (p.id === 'start' && this.elapsed < 0.15) continue;
-
+      // Приземление на платформу
       this.player.landOn(p.x, p.y);
-      const accuracy = this.calculateAccuracy(p.x, p.width);
-      const quality = this.getLandingQuality(p, accuracy);
-
       this.pattern.onPlayerLanded(p.id, this.elapsed);
 
-      if (this.pattern.isComplete() || p.isTarget || p.id === 'target') {
+      // ✅ ПОБЕДА засчитывается ТОЛЬКО если это ЦЕЛЕВАЯ платформа (не старт!)
+      if (p.isTarget || p.id === 'target') {
+        const accuracy = this.calculateAccuracy(p.x, p.width);
+        const quality = this.getLandingQuality(p, accuracy);
         this.complete(accuracy, quality);
       }
       return;
@@ -179,14 +177,18 @@ export class SituationRuntime {
       this.streak = 0;
     }
 
-    const reward = this.rewardCalculator.calculate(this.data.reward, quality, this.streak);
+    // ✅ Защита от NaN: гарантированно валидные числа
+    const baseCoins = Number(this.data.reward?.baseCoins ?? (this.data.reward as any)?.coins ?? 100) || 100;
+    const perfectBonus = quality === 'PERFECT' ? Number(this.data.reward?.perfectBonus ?? 150) || 150 : 0;
+    const earnedCoins = baseCoins + perfectBonus + (this.streak > 1 ? this.streak * 50 : 0);
+
     this.state = 'SUCCESS';
     this.result = {
       state: 'SUCCESS',
       landingQuality: quality,
       accuracy,
-      coins: reward.coins,
-      xp: reward.xp,
+      coins: earnedCoins,
+      xp: 50,
       streak: this.streak,
     };
   }
@@ -194,6 +196,7 @@ export class SituationRuntime {
   private fail(): void {
     if (this.state !== 'RUNNING') return;
     this.state = 'FAILED';
+    this.streak = 0;
     this.result = {
       state: 'FAILED',
       landingQuality: 'NONE',
