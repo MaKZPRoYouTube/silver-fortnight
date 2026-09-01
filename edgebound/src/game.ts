@@ -2,74 +2,81 @@ import { SituationRuntime } from './core/SituationRuntime';
 import { AudioSystem } from './core/AudioSystem';
 import { YandexBridge } from './core/YandexBridge';
 
-interface Particle {
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    life: number;
-    color: string;
-}
-
-interface PopupText {
-    text: string;
-    x: number;
-    y: number;
-    color: string;
-    life: number;
-    vy: number;
-}
-
 class GameApp {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
 
+    // Системы
     private audio: AudioSystem = new AudioSystem();
     private yandex: YandexBridge = new YandexBridge();
-
     private runtime!: SituationRuntime;
+
+    // DOM Элементы
+    private startPanel: HTMLElement;
+    private resultPanel: HTMLElement;
+    private startButton: HTMLButtonElement;
+    private retryButton: HTMLButtonElement;
+    private streakEl: HTMLElement;
+    private scoreEl: HTMLElement;
+    private windArrow: HTMLElement;
+    private windFill: HTMLElement;
+    private objectiveEl: HTMLElement;
+    private resultTitle: HTMLElement;
+    private resultReward: HTMLElement;
+    private feedbackEl: HTMLElement;
+
+    // Состояние
     private levelIndex: number = 1;
     private score: number = 0;
     private streak: number = 0;
     private maxStreak: number = 0;
-
-    private cameraX: number = 0;
-    private targetCameraX: number = 0;
-
     private hitstop: number = 0;
     private shake: number = 0;
-    private particles: Particle[] = [];
-    private popups: PopupText[] = [];
+    private particles: Array<{ x: number; y: number; vx: number; vy: number; life: number; color: string }> = [];
 
     private lastTime: number = 0;
 
     constructor() {
-        this.canvas = document.getElementById('viewport') as HTMLCanvasElement;
+        // Инициализация Canvas
+        this.canvas = document.getElementById('game') as HTMLCanvasElement;
         this.ctx = this.canvas.getContext('2d')!;
+        this.resizeCanvas();
 
+        // Поиск DOM элементов
+        this.startPanel = document.getElementById('start-panel')!;
+        this.resultPanel = document.getElementById('result-panel')!;
+        this.startButton = document.getElementById('start-button') as HTMLButtonElement;
+        this.retryButton = document.getElementById('retry-button') as HTMLButtonElement;
+        this.streakEl = document.getElementById('streak')!;
+        this.scoreEl = document.getElementById('score')!;
+        this.windArrow = document.getElementById('wind-arrow')!;
+        this.windFill = document.getElementById('wind-fill')!;
+        this.objectiveEl = document.getElementById('objective')!;
+        this.resultTitle = document.getElementById('result-title')!;
+        this.resultReward = document.getElementById('result-reward')!;
+        this.feedbackEl = document.getElementById('feedback')!;
+
+        // Инициализация сервисов
         this.yandex.init();
-        this.loadNextSituation();
-        this.initInput();
-
-        // Авто-пауза при сворачивании вкладки
-        document.addEventListener('visibilitychange', () => {
-            this.audio.setMuted(document.hidden);
-        });
+        this.setupSituation();
+        this.bindEvents();
 
         this.lastTime = performance.now();
         requestAnimationFrame((t) => this.loop(t));
     }
 
-    private loadNextSituation(): void {
-        const patterns = ['STATIC_STEP', 'MOVING_PLATFORM', 'FALLING_PLATFORM', 'MOVING_PLATFORM'];
-        const currentType = patterns[(this.levelIndex - 1) % patterns.length];
+    private resizeCanvas(): void {
+        this.canvas.width = 900;
+        this.canvas.height = 550;
+    }
 
-        const startX = (this.levelIndex - 1) * 350 + 100;
-        const targetX = startX + 240 + Math.min(100, this.levelIndex * 8);
+    private setupSituation(): void {
+        const startX = 140;
+        const targetX = 620;
 
         const situationData = {
             pattern: {
-                type: currentType,
+                type: 'MOVING_PLATFORM',
                 startX: startX,
                 startY: 380,
                 targetX: targetX,
@@ -79,7 +86,7 @@ class GameApp {
                 range: 90
             },
             modifiers: [
-                { type: 'WIND', direction: Math.random() > 0.5 ? 1 : -1, strength: 60 + this.levelIndex * 10 }
+                { type: 'WIND', direction: -1, strength: 60 + this.levelIndex * 12 }
             ],
             difficulty: this.levelIndex,
             reward: { baseCoins: 100, perfectBonus: 150, xp: 50 }
@@ -87,35 +94,35 @@ class GameApp {
 
         this.runtime = new SituationRuntime(situationData);
         this.runtime.streak = this.streak;
-        this.runtime.start();
-        this.targetCameraX = startX - 120;
     }
 
-    private initInput(): void {
-        const handleAction = () => {
+    private startRound(): void {
+        this.startPanel.classList.remove('visible');
+        this.resultPanel.classList.remove('visible');
+        this.runtime.start();
+    }
+
+    private bindEvents(): void {
+        // Кнопка СТАРТ
+        this.startButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.startRound();
+        });
+
+        // Кнопка РЕТРАЙ / СЛЕДУЮЩИЙ
+        this.retryButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.resultPanel.classList.remove('visible');
+            this.setupSituation();
+            this.startRound();
+        });
+
+        // Прыжок по клику на Canvas / пробелу
+        const handleJump = () => {
             if (this.runtime.state === 'RUNNING') {
                 if (this.runtime.jump()) {
                     this.audio.playJump();
                     this.addDust(this.runtime.player.getCenterX(), this.runtime.player.getBottom());
-                }
-            } else if (this.runtime.state === 'SUCCESS') {
-                this.levelIndex++;
-                this.loadNextSituation();
-            } else if (this.runtime.state === 'FAILED') {
-                // Если стрик был высоким (>= 3), предлагаем спасти за рекламу
-                if (this.streak >= 3) {
-                    this.yandex.showRewardedAd(() => {
-                        // Спасение стрика
-                        this.addPopup('STREAK SAVED!', this.runtime.player.getCenterX(), 350, '#38bdf8');
-                        this.runtime.start();
-                    }, () => {
-                        this.streak = 0;
-                        this.runtime.start();
-                    });
-                } else {
-                    this.streak = 0;
-                    this.yandex.showFullscreenAd();
-                    this.runtime.start();
                 }
             }
         };
@@ -123,18 +130,29 @@ class GameApp {
         window.addEventListener('keydown', (e: KeyboardEvent) => {
             if (e.code === 'Space') {
                 e.preventDefault();
-                handleAction();
+                if (this.startPanel.classList.contains('visible')) {
+                    this.startRound();
+                } else if (this.resultPanel.classList.contains('visible')) {
+                    this.retryButton.click();
+                } else {
+                    handleJump();
+                }
             }
         });
 
         this.canvas.addEventListener('pointerdown', (e: PointerEvent) => {
             e.preventDefault();
-            handleAction();
+            handleJump();
+        });
+
+        // Авто-пауза звука при переключении вкладки
+        document.addEventListener('visibilitychange', () => {
+            this.audio.setMuted(document.hidden);
         });
     }
 
     private addDust(x: number, y: number): void {
-        for (let i = 0; i < 8; i++) {
+        for (let i = 0; i < 10; i++) {
             this.particles.push({
                 x, y,
                 vx: (Math.random() - 0.5) * 60,
@@ -145,8 +163,13 @@ class GameApp {
         }
     }
 
-    private addPopup(text: string, x: number, y: number, color: string): void {
-        this.popups.push({ text, x, y, color, life: 1.0, vy: -50 });
+    private showFeedback(text: string, color: string): void {
+        this.feedbackEl.innerText = text;
+        this.feedbackEl.style.color = color;
+        this.feedbackEl.style.opacity = '1';
+        setTimeout(() => {
+            this.feedbackEl.style.opacity = '0';
+        }, 800);
     }
 
     private update(dt: number): void {
@@ -155,11 +178,16 @@ class GameApp {
             return;
         }
 
-        this.cameraX += (this.targetCameraX - this.cameraX) * 8 * dt;
-
         const prevState = this.runtime.state;
         this.runtime.update(dt);
 
+        // Обновление HUD (Ветромер)
+        const windVel = this.runtime.wind?.getHorizontalVelocity() ?? 0;
+        this.windArrow.innerText = windVel >= 0 ? '→' : '←';
+        const windPct = Math.min(100, Math.abs(windVel) / 1.8);
+        this.windFill.style.width = `${windPct}%`;
+
+        // Обработка успеха
         if (prevState === 'RUNNING' && this.runtime.state === 'SUCCESS') {
             const res = this.runtime.result!;
             this.streak = res.streak;
@@ -170,46 +198,63 @@ class GameApp {
                 this.yandex.submitScore('max_streak', this.maxStreak);
             }
 
-            const px = this.runtime.player.getCenterX();
-            const py = this.runtime.player.getBottom();
-
             if (res.landingQuality === 'PERFECT') {
                 this.audio.playPerfect();
                 this.hitstop = 0.12;
                 this.shake = 8;
-                this.addPopup(`PERFECT! +${res.coins}`, px, py - 40, '#fbbf24');
+                this.resultTitle.innerText = 'PERFECT!';
+                this.resultTitle.style.color = '#fbbf24';
+                this.showFeedback('PERFECT!', '#fbbf24');
             } else {
                 this.audio.playGood();
                 this.shake = 3;
-                this.addPopup(`GOOD +${res.coins}`, px, py - 30, '#38bdf8');
+                this.resultTitle.innerText = 'GOOD LANDING';
+                this.resultTitle.style.color = '#38bdf8';
+                this.showFeedback('GOOD', '#38bdf8');
             }
 
-            document.getElementById('hudStreak')!.innerText = String(this.streak);
-            document.getElementById('hudScore')!.innerText = String(this.score);
-            document.getElementById('hudHint')!.innerText = 'УСПЕХ! НАЖМИТЕ ДЛЯ СЛЕДУЮЩЕГО ПРЫЖКА';
-        } else if (prevState === 'RUNNING' && this.runtime.state === 'FAILED') {
+            this.resultReward.innerText = `+${res.coins} COINS (STREAK ×${this.streak})`;
+            this.retryButton.innerHTML = `NEXT SECTOR <span>↗</span>`;
+            this.resultPanel.classList.add('visible');
+
+            this.streakEl.innerText = `STREAK ×${this.streak}`;
+            this.scoreEl.innerText = String(this.score).padStart(4, '0');
+            this.levelIndex++;
+        } 
+        // Обработка провала
+        else if (prevState === 'RUNNING' && this.runtime.state === 'FAILED') {
             this.audio.playFail();
             this.shake = 9;
-            this.addPopup('VOID FALL', this.runtime.player.getCenterX(), 420, '#ef4444');
-            document.getElementById('hudStreak')!.innerText = '0';
-            document.getElementById('hudHint')!.innerText = this.streak >= 3 
-                ? 'НАЖМИТЕ, ЧТОБЫ СПАСТИ СТРИК ЗА РЕКЛАМУ' 
-                : 'ПАДЕНИЕ. НАЖМИТЕ ДЛЯ RETRY';
+            this.resultTitle.innerText = 'VOID FALL';
+            this.resultTitle.style.color = '#ef4444';
+            this.resultReward.innerText = '+0 COINS';
+            this.showFeedback('MISSED', '#ef4444');
+
+            if (this.streak >= 3) {
+                this.retryButton.innerHTML = `SAVE STREAK (AD) <span>★</span>`;
+                this.retryButton.onclick = () => {
+                    this.yandex.showRewardedAd(() => {
+                        this.resultPanel.classList.remove('visible');
+                        this.runtime.start();
+                    });
+                };
+            } else {
+                this.streak = 0;
+                this.retryButton.innerHTML = `RUN IT BACK <span>↻</span>`;
+                this.yandex.showFullscreenAd();
+            }
+
+            this.resultPanel.classList.add('visible');
+            this.streakEl.innerText = `STREAK ×0`;
         }
 
+        // Обновление частиц
         for (let i = this.particles.length - 1; i >= 0; i--) {
             const p = this.particles[i];
             p.x += p.vx * dt;
             p.y += p.vy * dt;
             p.life -= dt * 2;
             if (p.life <= 0) this.particles.splice(i, 1);
-        }
-
-        for (let i = this.popups.length - 1; i >= 0; i--) {
-            const t = this.popups[i];
-            t.y += t.vy * dt;
-            t.life -= dt * 1.5;
-            if (t.life <= 0) this.popups.splice(i, 1);
         }
 
         if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 20);
@@ -223,9 +268,11 @@ class GameApp {
         }
 
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.translate(-this.cameraX, 0);
 
-        // Платформы
+        // 1. Отрисовка ветра на фоне
+        this.drawWindVFX();
+
+        // 2. Отрисовка платформ
         for (const p of this.runtime.platforms) {
             this.ctx.fillStyle = '#1e293b';
             this.ctx.fillRect(p.x, p.y, p.width, p.height || 16);
@@ -241,7 +288,7 @@ class GameApp {
             }
         }
 
-        // Игрок
+        // 3. Игрок
         const player = this.runtime.player.state;
         this.ctx.fillStyle = '#38bdf8';
         this.ctx.shadowColor = '#0284c7';
@@ -249,11 +296,11 @@ class GameApp {
         this.ctx.fillRect(player.x, player.y, player.width, player.height);
         this.ctx.shadowBlur = 0;
 
-        // Глаз
+        // Глаз персонажа
         this.ctx.fillStyle = '#ffffff';
         this.ctx.fillRect(player.x + player.width - 9, player.y + 8, 6, 6);
 
-        // Частицы
+        // 4. Частицы
         for (const p of this.particles) {
             this.ctx.globalAlpha = Math.max(0, p.life);
             this.ctx.fillStyle = p.color;
@@ -262,15 +309,24 @@ class GameApp {
             this.ctx.fill();
         }
 
-        // Текст
-        for (const t of this.popups) {
-            this.ctx.globalAlpha = Math.max(0, t.life);
-            this.ctx.font = '800 20px -apple-system, sans-serif';
-            this.ctx.fillStyle = t.color;
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText(t.text, t.x, t.y);
-        }
+        this.ctx.restore();
+    }
 
+    private drawWindVFX(): void {
+        this.ctx.save();
+        this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.1)';
+        this.ctx.lineWidth = 1.5;
+        const wStr = this.runtime.wind?.getHorizontalVelocity() ?? 0;
+        const offset = (this.runtime.elapsed * wStr * 2) % 50;
+
+        for (let y = 120; y < 460; y += 45) {
+            this.ctx.beginPath();
+            for (let x = -50; x < this.canvas.width + 50; x += 60) {
+                this.ctx.moveTo(x + offset, y);
+                this.ctx.lineTo(x + offset + 20 * Math.sign(wStr || 1), y);
+            }
+            this.ctx.stroke();
+        }
         this.ctx.restore();
     }
 
