@@ -9,47 +9,42 @@ declare global {
 export class YandexBridge {
     private ysdk: any = null;
     private player: any = null;
-    private leaderboard: any = null;
-
     public isInitialized: boolean = false;
     private lastAdTime: number = 0;
 
     public async init(): Promise<void> {
-        try {
-            if (window.YaGames) {
+        // Проверяем, запущена ли игра внутри iframe на серверах Яндекса
+        const isInsideIframe = window.parent !== window;
+
+        if (window.YaGames && isInsideIframe) {
+            try {
                 this.ysdk = await window.YaGames.init();
                 this.isInitialized = true;
-                
+
                 // Сообщаем Яндексу, что игра загрузилась
                 this.ysdk.features.LoadingAPI?.ready();
 
                 // Инициализация игрока
                 try {
-                    this.player = await this.ysdk.getPlayer();
+                    this.player = await this.ysdk.getPlayer({ scopes: false });
                 } catch (e) {
-                    console.log('Игрок не авторизован');
-                }
-
-                // Инициализация лидерборда
-                try {
-                    this.leaderboard = await this.ysdk.getLeaderboards();
-                } catch (e) {
-                    console.log('Лидерборды недоступны');
+                    console.log('ℹ️ Игрок не авторизован (гостевой режим)');
                 }
 
                 console.log('✅ Yandex Games SDK успешно подключен!');
-            } else {
-                console.log('ℹ️ Режим локального тестирования (SDK Яндекса не обнаружен)');
+            } catch (error) {
+                console.warn('⚠️ Ошибка подключения к Яндекс SDK:', error);
             }
-        } catch (error) {
-            console.warn('Ошибка инициализации SDK:', error);
+        } else {
+            console.log('🛠️ Локальный режим: эмуляция Яндекс SDK (без ошибок)');
+            this.isInitialized = true;
         }
     }
 
-    // Полноэкранная реклама (Interstitial) с таймером в 70 секунд
+    // Полноэкранная реклама (Interstitial)
     public showFullscreenAd(onOpen?: () => void, onClose?: () => void): void {
         const now = Date.now();
-        if (now - this.lastAdTime < 70000) {
+        if (now - this.lastAdTime < 60000) {
             onClose?.();
             return;
         }
@@ -66,6 +61,7 @@ export class YandexBridge {
                 }
             });
         } else {
+            console.log('📺 [Тест] Показ межстраничной рекламы');
             onClose?.();
         }
     }
@@ -81,21 +77,27 @@ export class YandexBridge {
                 }
             });
         } else {
-            // Локальный тест: сразу даем награду
-            const confirmAd = confirm('Тестовая реклама за награду: Спасти стрик?');
-            if (confirmAd) onRewarded();
+            console.log('🎁 [Тест] Реклама за вознаграждение: стрик спасён!');
+            onRewarded();
             onClose?.();
         }
     }
 
-    // Отправка лучшего стрика в Лидерборд Яндекса
+    // Отправка очков в таблицу лидеров (исправлен deprecated вызов)
     public async submitScore(leaderboardName: string, score: number): Promise<void> {
-        if (this.ysdk && this.leaderboard) {
+        if (this.ysdk) {
             try {
-                await this.ysdk.setLeaderboardScore(leaderboardName, score);
+                if (this.ysdk.leaderboards) {
+                    await this.ysdk.leaderboards.setLeaderboardScore(leaderboardName, score);
+                } else if (this.ysdk.getLeaderboards) {
+                    const lb = await this.ysdk.getLeaderboards();
+                    await lb.setLeaderboardScore(leaderboardName, score);
+                }
             } catch (err) {
                 console.warn('Не удалось записать счет в лидерборд:', err);
             }
+        } else {
+            console.log(`🏆 [Тест] Запись в лидерборд "${leaderboardName}": ${score}`);
         }
     }
 }
