@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -11,25 +11,61 @@
   <body>
     <main class="game-shell" aria-label="EDGEBOUND game">
       <canvas id="game" aria-label="Tap to jump"></canvas>
+      
+      <!-- Верхний HUD -->
       <section class="hud" aria-live="polite">
-        <div class="brand">EDGEBOUND <span>///</span></div>
-        <div class="hud-stats"><span id="streak">STREAK ×0</span><strong id="score">0000</strong></div>
-        <div class="wind-meter"><span class="wind-label">WIND</span><i id="wind-arrow">→</i><div class="wind-track"><b id="wind-fill"></b></div></div>
-        <p id="objective">TIME THE MOVING PLATFORM</p>
+        <div class="hud-left">
+          <div class="brand">EDGEBOUND <span>///</span></div>
+          <button id="shop-btn" class="hud-btn">SKINS ◈</button>
+        </div>
+        <div class="hud-stats">
+          <span id="streak">STREAK ×0</span>
+          <strong id="score">0000</strong>
+        </div>
+        <div class="wind-meter">
+          <span class="wind-label">WIND</span>
+          <i id="wind-arrow">→</i>
+          <div class="wind-track"><b id="wind-fill"></b></div>
+        </div>
+        <p id="objective">SECTOR 01 /// WELCOME: TAP TO JUMP</p>
       </section>
+
+      <!-- Стартовая панель -->
       <section id="start-panel" class="panel visible">
-        <p class="eyebrow">SECTOR 01 / WIND TEST</p>
+        <p class="eyebrow">EDGEBOUND /// PROTOCOL</p>
         <h1>FIND THE<br /><em>EDGE.</em></h1>
         <p>One tap. One jump.<br />Land in the core for a <b>PERFECT.</b></p>
-        <button id="start-button">TAP TO DROP IN <span>↗</span></button>
+        <button id="start-button">DROP IN <span>↗</span></button>
         <small>SPACE / CLICK / TAP</small>
       </section>
+
+      <!-- Панель результата раунда -->
       <section id="result-panel" class="panel">
         <p id="result-kicker" class="eyebrow">LANDING CONFIRMED</p>
         <h2 id="result-title">PERFECT!</h2>
         <p id="result-reward">+200 COINS</p>
-        <button id="retry-button">RUN IT BACK <span>↻</span></button>
+        <button id="retry-button">NEXT CHALLENGE <span>↗</span></button>
       </section>
+
+      <!-- Панель финала кампании (Сектор 24) -->
+      <section id="victory-panel" class="panel">
+        <p class="eyebrow">SECTOR 24 COMPLETED /// PROTOCOL OVERRIDE</p>
+        <h2 style="color: #fbbf24;">SECTOR 24 CLEARED!</h2>
+        <p>You have conquered the Edge and defeated the Guardian Core.<br />+1000 VICTORY BONUS!</p>
+        <button id="endless-button">ENTER ENDLESS MODE <span>★</span></button>
+      </section>
+
+      <!-- Панель Магазина скинов -->
+      <section id="shop-panel" class="panel">
+        <div class="shop-header">
+          <h2>SKIN ARSENAL</h2>
+          <p id="shop-coins-display">COINS: 0000</p>
+        </div>
+        <div id="skins-grid" class="skins-grid"></div>
+        <button id="close-shop-btn" class="secondary-btn">CLOSE ✕</button>
+      </section>
+
+      <!-- Игровой фидбек -->
       <div id="feedback" class="feedback" aria-live="assertive"></div>
       <p class="tap-hint">TAP ANYWHERE TO JUMP</p>
     </main>
