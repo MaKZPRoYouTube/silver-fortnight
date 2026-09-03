@@ -1,10 +1,14 @@
 /**
  * EDGEBOUND — VERTICAL SLICE (MOVING PLATFORM + WIND)
- * Фокус: Game Feel, упругая физика, кинематографичный Perfect, Slow-Mo и Mobile-first.
+ * Полное соответствие концепции:
+ * 1. Математически выверенная физика (PhysicsValidator: прыжок всегда достижим).
+ * 2. Привязка игрока к движущейся платформе после приземления (нет зависания в воздухе).
+ * 3. Отсутствие перекрытия UI (feedback мгновенно исчезает перед панелью).
+ * 4. Стрик считает серию Perfect прыжков с бонусами и отображением в окне результатов.
  */
 
 // ============================================================================
-// 1. АУДИОДВИЖОК (Web Audio API сочный саунд-дизайн)
+// 1. АУДИОСИСТЕМА (Web Audio API)
 // ============================================================================
 class AudioEngine {
     private ctx: AudioContext | null = null;
@@ -29,33 +33,32 @@ class AudioEngine {
     public playJump(): void {
         if (this.isMuted || !this.ctx) return;
         const now = this.ctx.currentTime;
-
-        // Щелчок/панч
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
+
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(140, now);
-        osc.frequency.exponentialRampToValueAtTime(460, now + 0.14);
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(480, now + 0.12);
 
         gain.gain.setValueAtTime(0.35, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
 
         osc.connect(gain);
         gain.connect(this.ctx.destination);
         osc.start(now);
-        osc.stop(now + 0.14);
+        osc.stop(now + 0.12);
     }
 
     public playLanding(isPerfect: boolean): void {
         if (this.isMuted || !this.ctx) return;
         const now = this.ctx.currentTime;
 
-        // Басовый удар веса
+        // Басовый панч приземления
         const bassOsc = this.ctx.createOscillator();
         const bassGain = this.ctx.createGain();
         bassOsc.type = 'triangle';
-        bassOsc.frequency.setValueAtTime(120, now);
-        bassOsc.frequency.exponentialRampToValueAtTime(30, now + 0.18);
+        bassOsc.frequency.setValueAtTime(110, now);
+        bassOsc.frequency.exponentialRampToValueAtTime(35, now + 0.18);
 
         bassGain.gain.setValueAtTime(0.4, now);
         bassGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
@@ -66,22 +69,20 @@ class AudioEngine {
         bassOsc.stop(now + 0.18);
 
         if (isPerfect) {
-            // Эйфорический трезвучный аккорд
-            const freqs = [523.25, 659.25, 783.99, 1046.5]; // C - E - G - C
+            // Мажорный аккорд Perfect
+            const freqs = [523.25, 659.25, 783.99, 1046.5];
             freqs.forEach((freq, idx) => {
                 const osc = this.ctx!.createOscillator();
                 const gain = this.ctx!.createGain();
                 osc.type = 'sine';
-                const startTime = now + idx * 0.035;
-                osc.frequency.setValueAtTime(freq, startTime);
-
-                gain.gain.setValueAtTime(0.2, startTime);
-                gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.45);
-
+                const start = now + idx * 0.035;
+                osc.frequency.setValueAtTime(freq, start);
+                gain.gain.setValueAtTime(0.22, start);
+                gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.45);
                 osc.connect(gain);
                 gain.connect(this.ctx!.destination);
-                osc.start(startTime);
-                osc.stop(startTime + 0.45);
+                osc.start(start);
+                osc.stop(start + 0.45);
             });
         }
     }
@@ -91,8 +92,9 @@ class AudioEngine {
         const now = this.ctx.currentTime;
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
+
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.setValueAtTime(160, now);
         osc.frequency.exponentialRampToValueAtTime(35, now + 0.35);
 
         gain.gain.setValueAtTime(0.3, now);
@@ -102,10 +104,6 @@ class AudioEngine {
         gain.connect(this.ctx.destination);
         osc.start(now);
         osc.stop(now + 0.35);
-    }
-
-    public setMuted(muted: boolean): void {
-        this.isMuted = muted;
     }
 }
 
@@ -136,18 +134,17 @@ class VFXSystem {
     public particles: Particle[] = [];
     public shockwaves: Shockwave[] = [];
 
-    public spawnDust(x: number, y: number, count = 12): void {
+    public spawnDust(x: number, y: number, count = 10): void {
         for (let i = 0; i < count; i++) {
             const angle = Math.PI + (Math.random() - 0.5) * Math.PI;
-            const speed = 40 + Math.random() * 90;
+            const speed = 30 + Math.random() * 80;
             this.particles.push({
-                x,
-                y,
+                x, y,
                 vx: Math.cos(angle) * speed,
                 vy: Math.sin(angle) * speed * 0.5,
-                life: 0.4 + Math.random() * 0.2,
-                maxLife: 0.6,
-                size: 2 + Math.random() * 3,
+                life: 0.4,
+                maxLife: 0.4,
+                size: 2 + Math.random() * 2,
                 color: '#94a3b8'
             });
         }
@@ -155,24 +152,22 @@ class VFXSystem {
 
     public spawnPerfectBurst(x: number, y: number): void {
         this.shockwaves.push({
-            x,
-            y,
-            radius: 5,
-            maxRadius: 75,
+            x, y,
+            radius: 6,
+            maxRadius: 80,
             alpha: 1.0,
             color: '#fbbf24'
         });
 
-        for (let i = 0; i < 35; i++) {
+        for (let i = 0; i < 30; i++) {
             const angle = Math.random() * Math.PI * 2;
-            const speed = 100 + Math.random() * 240;
+            const speed = 90 + Math.random() * 200;
             this.particles.push({
-                x,
-                y,
+                x, y,
                 vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed - 60,
-                life: 0.5 + Math.random() * 0.35,
-                maxLife: 0.85,
+                vy: Math.sin(angle) * speed - 50,
+                life: 0.6,
+                maxLife: 0.6,
                 size: 3 + Math.random() * 3,
                 color: Math.random() > 0.3 ? '#fbbf24' : '#38bdf8'
             });
@@ -180,32 +175,25 @@ class VFXSystem {
     }
 
     public update(dt: number): void {
-        // Обновление частиц
         for (let i = this.particles.length - 1; i >= 0; i--) {
             const p = this.particles[i]!;
             p.x += p.vx * dt;
             p.y += p.vy * dt;
-            p.vy += 400 * dt; // легкая гравитация для частиц
+            p.vy += 450 * dt;
             p.life -= dt;
-            if (p.life <= 0) {
-                this.particles.splice(i, 1);
-            }
+            if (p.life <= 0) this.particles.splice(i, 1);
         }
 
-        // Обновление колец шоквейва
         for (let i = this.shockwaves.length - 1; i >= 0; i--) {
             const s = this.shockwaves[i]!;
             s.radius += (s.maxRadius - s.radius) * 12 * dt;
-            s.alpha -= dt * 2.2;
-            if (s.alpha <= 0) {
-                this.shockwaves.splice(i, 1);
-            }
+            s.alpha -= dt * 2.5;
+            if (s.alpha <= 0) this.shockwaves.splice(i, 1);
         }
     }
 
     public draw(ctx: CanvasRenderingContext2D): void {
         ctx.save();
-        // Рендер шоквейвов
         for (const s of this.shockwaves) {
             ctx.save();
             ctx.strokeStyle = s.color;
@@ -217,7 +205,6 @@ class VFXSystem {
             ctx.restore();
         }
 
-        // Рендер частиц
         for (const p of this.particles) {
             ctx.save();
             ctx.fillStyle = p.color;
@@ -232,8 +219,19 @@ class VFXSystem {
 }
 
 // ============================================================================
-// 3. ОСНОВНОЙ КЛАСС ИГРЫ
+// 3. ОСНОВНОЙ ДВИЖОК ИГРЫ
 // ============================================================================
+interface Platform {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    springY: number;
+    baseX?: number;
+    speed?: number;
+    amplitude?: number;
+}
+
 export class GameApp {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
@@ -241,7 +239,7 @@ export class GameApp {
     private audio = new AudioEngine();
     private vfx = new VFXSystem();
 
-    // Виртуальное разрешение холста
+    // Виртуальное разрешение (16:9)
     public readonly V_WIDTH = 960;
     public readonly V_HEIGHT = 540;
 
@@ -256,44 +254,56 @@ export class GameApp {
     private startButton = document.getElementById('start-button')!;
     private retryButton = document.getElementById('retry-button')!;
     private feedbackEl = document.getElementById('feedback')!;
+    private resultKicker = document.getElementById('result-kicker')!;
     private resultTitle = document.getElementById('result-title')!;
     private resultReward = document.getElementById('result-reward')!;
 
-    // Игровой цикл и прогресс
+    // Игровое состояние
     private gameState: 'MENU' | 'RUNNING' | 'SUCCESS' | 'FAILED' = 'MENU';
-    private streak = 0;
+    private streak = 0; // Серия Perfect прыжков
     private score = 0;
     private currentSector = 1;
-    private challengeSeed = 42; // Для строгого повтора испытания при ошибке
+    private currentSeed = 1001; // Фиксированный сид для точного повтора текущего челленджа
+    private time = 0;
     private timeScale = 1.0;
     private targetTimeScale = 1.0;
-    private time = 0;
     private lastFrameTime = performance.now();
+    private feedbackTimeout: number | null = null;
 
     // Камера и тряска
-    private camera = { x: 0, y: 0, zoom: 1.0, targetZoom: 1.0 };
+    private camera = { zoom: 1.0, targetZoom: 1.0 };
     private shake = 0;
 
+    // Константы проверенной физики (PhysicsModel)
+    private readonly GRAVITY = 1250;
+    private readonly JUMP_POWER = -560;
+    private readonly AIRTIME = (2 * 560) / 1250; // ~0.896 с в воздухе
+    private readonly HORIZONTAL_SPEED = 340;
+
     // Платформы
-    private startPlatform = { x: 100, y: 390, width: 140, height: 18, springY: 0 };
-    private targetPlatform = {
-        x: 520,
+    private startPlatform: Platform = { x: 100, y: 390, width: 130, height: 18, springY: 0 };
+    private targetPlatform: Platform = {
+        x: 480,
         y: 390,
-        baseX: 520,
+        baseX: 480,
         width: 120,
         height: 18,
-        speed: 2.2,
-        amplitude: 85,
+        speed: 1.8,
+        amplitude: 65,
         springY: 0
     };
 
+    // Привязка кубика к платформе (решение проблемы зависания в воздухе)
+    private attachedPlatform: Platform | null = null;
+    private platformOffsetX = 0;
+
     // Ветер
-    private wind = { direction: 1, strength: 55, current: 0 };
+    private wind = { direction: 1, strength: 0, current: 0 };
     private windLines: Array<{ x: number; y: number; len: number; speed: number; alpha: number }> = [];
 
-    // Игрок
+    // Персонаж
     private player = {
-        x: 150,
+        x: 149,
         y: 390 - 42,
         width: 32,
         height: 42,
@@ -301,25 +311,22 @@ export class GameApp {
         vy: 0,
         grounded: true,
         scaleX: 1,
-        scaleY: 1,
-        jumpPower: -580,
-        gravity: 1350,
-        horizontalSpeed: 330
+        scaleY: 1
     };
 
     constructor() {
         this.canvas = document.getElementById('game') as HTMLCanvasElement;
         this.ctx = this.canvas.getContext('2d')!;
 
-        this.initResizeObserver();
-        this.initWindDecorations();
-        this.bindInput();
-        this.loadSector(this.currentSector, this.challengeSeed);
+        this.initResize();
+        this.initWindLines();
+        this.bindEvents();
+        this.loadSector(this.currentSector, this.currentSeed);
 
         requestAnimationFrame((t) => this.loop(t));
     }
 
-    private initResizeObserver(): void {
+    private initResize(): void {
         const resize = () => {
             const dpr = Math.min(window.devicePixelRatio || 1, 2);
             const rect = this.canvas.getBoundingClientRect();
@@ -330,21 +337,21 @@ export class GameApp {
         resize();
     }
 
-    private initWindDecorations(): void {
+    private initWindLines(): void {
         this.windLines = [];
-        for (let i = 0; i < 30; i++) {
+        for (let i = 0; i < 26; i++) {
             this.windLines.push({
                 x: Math.random() * this.V_WIDTH,
                 y: 80 + Math.random() * 380,
-                len: 30 + Math.random() * 80,
+                len: 30 + Math.random() * 70,
                 speed: 0.8 + Math.random() * 0.7,
                 alpha: 0.08 + Math.random() * 0.16
             });
         }
     }
 
-    private bindInput(): void {
-        const doAction = () => {
+    private bindEvents(): void {
+        const onAction = () => {
             if (this.gameState === 'MENU') {
                 this.startRound();
             } else if (this.gameState === 'RUNNING') {
@@ -358,13 +365,13 @@ export class GameApp {
 
         this.canvas.addEventListener('pointerdown', (e) => {
             e.preventDefault();
-            doAction();
+            onAction();
         });
 
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space' || e.code === 'ArrowUp') {
                 e.preventDefault();
-                doAction();
+                onAction();
             }
         });
 
@@ -384,6 +391,7 @@ export class GameApp {
     }
 
     private startRound(): void {
+        this.clearFeedback();
         this.startPanel.classList.remove('visible');
         this.resultPanel.classList.remove('visible');
         this.gameState = 'RUNNING';
@@ -392,35 +400,54 @@ export class GameApp {
     private jump(): void {
         if (!this.player.grounded) return;
 
+        // Отвязываем от платформы при прыжке
         this.player.grounded = false;
-        this.player.vy = this.player.jumpPower;
-        // Стретч при взлете
-        this.player.scaleX = 0.7;
+        this.attachedPlatform = null;
+        this.player.vy = this.JUMP_POWER;
+
+        // Стретч персонажа
+        this.player.scaleX = 0.72;
         this.player.scaleY = 1.35;
         this.audio.playJump();
         this.vfx.spawnDust(this.player.x + this.player.width / 2, this.player.y + this.player.height, 10);
     }
 
+    /**
+     * Загрузка сектора с применением PhysicsValidator:
+     * Гарантирует, что при любой силе ветра платформа всегда находится в зоне приземления.
+     */
     private loadSector(sector: number, seed: number): void {
-        // Простая детерминированная псевдослучайность от seed
-        const pseudoRand = Math.sin(seed) * 10000;
-        const offset = (pseudoRand - Math.floor(pseudoRand)) * 40 - 20;
+        const tier = Math.min(5, Math.floor((sector - 1) / 4)); // Повышение сложности каждые 4 сектора
 
         this.objectiveEl.innerText = `SECTOR 0${sector} /// MOVING PLATFORM + WIND`;
 
-        // Ветер меняет силу и вектор в зависимости от сектора
-        const isHeadwind = sector % 2 === 0;
-        this.wind.direction = isHeadwind ? -1 : 1;
-        this.wind.strength = 45 + Math.min(60, sector * 8);
+        // 1. Ветер: направление и сила зависят от сектора и сида
+        const windCycle = Math.sin(seed * 0.77 + sector * 1.3);
+        this.wind.direction = windCycle >= 0 ? 1 : -1;
+        // Сила ветра строго ограничена в пределах 20-50 px/s, чтобы сохранить контроль
+        this.wind.strength = 20 + Math.min(30, tier * 6);
 
-        // Положение движущейся платформы
-        this.targetPlatform.baseX = 490 + offset;
-        this.targetPlatform.width = Math.max(75, 125 - sector * 5);
-        this.targetPlatform.speed = 1.8 + Math.min(1.5, sector * 0.2);
-        this.targetPlatform.amplitude = 70 + Math.min(30, sector * 4);
+        // 2. Параметры платформы
+        // Ширина никогда не падает ниже 85px!
+        this.targetPlatform.width = Math.max(85, 130 - tier * 9);
+        this.targetPlatform.speed = 1.6 + tier * 0.25;
+        this.targetPlatform.amplitude = 50 + tier * 6;
 
-        // Возврат игрока на стартовую платформу
-        this.player.x = this.startPlatform.x + (this.startPlatform.width - this.player.width) / 2;
+        // 3. ФИЗИЧЕСКИЙ ВАЛИДАТОР (PhysicsValidator Reach Calculation)
+        // Точная средняя горизонтальная скорость во время прыжка
+        const expectedVx = this.HORIZONTAL_SPEED + (this.wind.direction * this.wind.strength);
+        const flightDistance = expectedVx * this.AIRTIME;
+        const playerStartX = this.startPlatform.x + (this.startPlatform.width - this.player.width) / 2;
+
+        // Точка приземления центра кубика
+        const landingCenterX = playerStartX + (this.player.width / 2) + flightDistance;
+
+        // Центр колебания целевой платформы baseX строго совпадает с расчетной точкой приземления!
+        this.targetPlatform.baseX = landingCenterX - (this.targetPlatform.width / 2);
+        this.targetPlatform.x = this.targetPlatform.baseX;
+
+        // 4. Размещение игрока на стартовой платформе
+        this.player.x = playerStartX;
         this.player.y = this.startPlatform.y - this.player.height;
         this.player.vx = 0;
         this.player.vy = 0;
@@ -428,68 +455,106 @@ export class GameApp {
         this.player.scaleX = 1;
         this.player.scaleY = 1;
 
+        // Привязываем кубик к стартовой платформе
+        this.attachedPlatform = this.startPlatform;
+        this.platformOffsetX = this.player.x - this.startPlatform.x;
+
         this.targetTimeScale = 1.0;
         this.timeScale = 1.0;
         this.camera.targetZoom = 1.0;
     }
 
+    /**
+     * Повтор того же испытания (по концепции: тот же сектор и сид)
+     */
     private retrySameChallenge(): void {
+        this.clearFeedback();
         this.resultPanel.classList.remove('visible');
-        this.loadSector(this.currentSector, this.challengeSeed);
+        this.loadSector(this.currentSector, this.currentSeed);
         this.gameState = 'RUNNING';
     }
 
+    /**
+     * Переход к следующему испытанию
+     */
     private nextChallenge(): void {
+        this.clearFeedback();
         this.resultPanel.classList.remove('visible');
         this.currentSector++;
-        this.challengeSeed = Date.now(); // Новый вызов
-        this.loadSector(this.currentSector, this.challengeSeed);
+        this.currentSeed = Math.floor(Math.random() * 100000);
+        this.loadSector(this.currentSector, this.currentSeed);
         this.gameState = 'RUNNING';
+    }
+
+    private clearFeedback(): void {
+        if (this.feedbackTimeout) {
+            clearTimeout(this.feedbackTimeout);
+            this.feedbackTimeout = null;
+        }
+        this.feedbackEl.innerText = '';
+        this.feedbackEl.style.opacity = '0';
+    }
+
+    private showFeedback(text: string, color: string): void {
+        this.clearFeedback();
+        this.feedbackEl.innerText = text;
+        this.feedbackEl.style.color = color;
+        this.feedbackEl.style.opacity = '1';
+        this.feedbackTimeout = window.setTimeout(() => {
+            this.feedbackEl.style.opacity = '0';
+        }, 350);
     }
 
     private update(dt: number): void {
-        // Плавное слоу-мо
         this.timeScale += (this.targetTimeScale - this.timeScale) * 8 * dt;
         const effectiveDt = dt * this.timeScale;
-
         this.time += effectiveDt;
 
-        // 1. Обновление ветра
-        this.wind.current = this.wind.direction * this.wind.strength * (1 + Math.sin(this.time * 2.5) * 0.18);
+        // 1. Ветер
+        this.wind.current = this.wind.direction * this.wind.strength * (1 + Math.sin(this.time * 2.2) * 0.12);
         const absWind = Math.abs(this.wind.current);
         this.windArrow.innerText = this.wind.current >= 0 ? '→' : '←';
-        this.windFill.style.width = `${Math.min(100, (absWind / 120) * 100)}%`;
+        this.windFill.style.width = `${Math.min(100, Math.max(20, (absWind / 60) * 100))}%`;
 
         for (const line of this.windLines) {
-            line.x += (this.wind.current * 1.8) * line.speed * effectiveDt;
+            line.x += (this.wind.current * 2.0) * line.speed * effectiveDt;
             if (line.x > this.V_WIDTH + 80) line.x = -80;
             if (line.x < -80) line.x = this.V_WIDTH + 80;
         }
 
         // 2. Движение целевой платформы
-        this.targetPlatform.x = this.targetPlatform.baseX + Math.sin(this.time * this.targetPlatform.speed) * this.targetPlatform.amplitude;
+        if (this.targetPlatform.baseX !== undefined && this.targetPlatform.amplitude !== undefined && this.targetPlatform.speed !== undefined) {
+            this.targetPlatform.x = this.targetPlatform.baseX + Math.sin(this.time * this.targetPlatform.speed) * this.targetPlatform.amplitude;
+        }
 
         // Пружинящие платформы
         this.startPlatform.springY += (0 - this.startPlatform.springY) * 14 * dt;
         this.targetPlatform.springY += (0 - this.targetPlatform.springY) * 14 * dt;
 
-        // 3. Физика игрока
-        if (this.gameState === 'RUNNING' && !this.player.grounded) {
-            this.player.vy += this.player.gravity * effectiveDt;
-            this.player.vx = this.player.horizontalSpeed + this.wind.current;
+        // 3. Физика персонажа
+        if (this.gameState === 'RUNNING') {
+            if (this.player.grounded && this.attachedPlatform) {
+                // ✅ Решение проблемы зависания: кубик двигается вместе с платформой!
+                this.player.x = this.attachedPlatform.x + this.platformOffsetX;
+                this.player.y = this.attachedPlatform.y + this.attachedPlatform.springY - this.player.height;
+            } else if (!this.player.grounded) {
+                // Полет
+                this.player.vy += this.GRAVITY * effectiveDt;
+                this.player.vx = this.HORIZONTAL_SPEED + this.wind.current;
 
-            this.player.x += this.player.vx * effectiveDt;
-            this.player.y += this.player.vy * effectiveDt;
+                this.player.x += this.player.vx * effectiveDt;
+                this.player.y += this.player.vy * effectiveDt;
 
-            // Возврат деформации формы в воздухе
-            this.player.scaleX += (1 - this.player.scaleX) * 9 * effectiveDt;
-            this.player.scaleY += (1 - this.player.scaleY) * 9 * effectiveDt;
+                // Возврат формы
+                this.player.scaleX += (1 - this.player.scaleX) * 9 * effectiveDt;
+                this.player.scaleY += (1 - this.player.scaleY) * 9 * effectiveDt;
 
-            this.checkCollisions(effectiveDt);
+                this.checkCollisions(effectiveDt);
 
-            // Падение в бездну
-            if (this.player.y > this.V_HEIGHT + 60) {
-                this.onFail();
+                // Падение в бездну
+                if (this.player.y > this.V_HEIGHT + 50) {
+                    this.onFail();
+                }
             }
         }
 
@@ -503,7 +568,7 @@ export class GameApp {
     }
 
     private checkCollisions(dt: number): void {
-        if (this.player.vy <= 0) return; // Проверяем только при движении вниз
+        if (this.player.vy <= 0) return;
 
         const playerBottom = this.player.y + this.player.height;
         const prevBottom = playerBottom - this.player.vy * dt;
@@ -520,13 +585,16 @@ export class GameApp {
             const crossesTop = prevBottom <= p.y + 16 && playerBottom >= p.y;
 
             if (overlapsX && crossesTop) {
-                // Приземление
+                // Успешная посадка
+                this.player.grounded = true;
+                this.attachedPlatform = p;
+                this.platformOffsetX = this.player.x - p.x; // Сохраняем смещение относительно платформы
+
                 this.player.y = p.y - this.player.height;
                 this.player.vy = 0;
                 this.player.vx = 0;
-                this.player.grounded = true;
 
-                // Squash эффект игрока и пружина платформы
+                // Squash
                 this.player.scaleX = 1.38;
                 this.player.scaleY = 0.65;
                 p.springY = 6;
@@ -547,93 +615,92 @@ export class GameApp {
         const target = this.targetPlatform;
         const playerCenter = this.player.x + this.player.width / 2;
         const targetCenter = target.x + target.width / 2;
-        const distFromCenter = Math.abs(playerCenter - targetCenter);
+        const dist = Math.abs(playerCenter - targetCenter);
 
-        // Зона Perfect — центральные 32% платформы
-        const perfectRadius = (target.width * 0.32) / 2;
-        const isPerfect = distFromCenter <= perfectRadius;
+        // Зона Perfect: центральные 35% платформы
+        const perfectRadius = (target.width * 0.35) / 2;
+        const isPerfect = dist <= perfectRadius;
 
         let reward = 100;
 
         if (isPerfect) {
+            // ✅ Стрик считает серию Perfect прыжков
             this.streak++;
-            reward = 200 + this.streak * 50;
+            // Расчет награды строго по концепции: Base Perfect 200 + бонус за каждый Perfect в серии
+            reward = 200 + (this.streak - 1) * 50;
 
-            // КИНЕМАТОГРАФИЧНЫЙ СОК (JUICE)
-            this.timeScale = 0.15; // Замедление времени
+            this.timeScale = 0.18; // Плавное слоу-мо
             this.targetTimeScale = 1.0;
-            this.camera.targetZoom = 1.08; // Микро-зум
-            setTimeout(() => { this.camera.targetZoom = 1.0; }, 320);
+            this.camera.targetZoom = 1.08;
+            setTimeout(() => { this.camera.targetZoom = 1.0; }, 300);
 
-            this.shake = 10;
+            this.shake = 9;
             this.audio.playLanding(true);
             this.vfx.spawnPerfectBurst(playerCenter, target.y);
+            this.showFeedback('PERFECT!', '#fbbf24');
 
-            this.feedbackEl.innerText = 'PERFECT!';
-            this.feedbackEl.style.color = '#fbbf24';
-            this.feedbackEl.style.opacity = '1';
-            setTimeout(() => { this.feedbackEl.style.opacity = '0'; }, 800);
-
+            // Окно результатов по концепции (Раздел 18)
+            this.resultKicker.innerText = `STREAK ×${this.streak}`;
+            this.resultKicker.style.color = '#fbbf24';
             this.resultTitle.innerText = 'PERFECT!';
             this.resultTitle.style.color = '#fbbf24';
+            this.resultReward.innerText = `+${reward} COINS`;
         } else {
+            // Good: безопасное приземление (+100 монет), но серия Perfect прерывается
             this.streak = 0;
             reward = 100;
-            this.shake = 4;
+
+            this.shake = 3;
             this.audio.playLanding(false);
-            this.vfx.spawnDust(playerCenter, target.y, 14);
+            this.vfx.spawnDust(playerCenter, target.y, 12);
+            this.showFeedback('GOOD', '#38bdf8');
 
-            this.feedbackEl.innerText = 'GOOD';
-            this.feedbackEl.style.color = '#38bdf8';
-            this.feedbackEl.style.opacity = '1';
-            setTimeout(() => { this.feedbackEl.style.opacity = '0'; }, 700);
-
+            this.resultKicker.innerText = 'LANDING CONFIRMED';
+            this.resultKicker.style.color = '#64748b';
             this.resultTitle.innerText = 'GOOD LANDING';
             this.resultTitle.style.color = '#38bdf8';
+            this.resultReward.innerText = '+100 COINS';
         }
 
         this.score += reward;
         this.streakEl.innerText = `STREAK ×${this.streak}`;
         this.scoreEl.innerText = String(this.score).padStart(4, '0');
-        this.resultReward.innerText = `+${reward} COINS`;
         this.retryButton.innerHTML = `NEXT CHALLENGE <span>↗</span>`;
 
+        // Открытие панели результатов без наложения текста feedback
         setTimeout(() => {
+            this.clearFeedback();
             this.resultPanel.classList.add('visible');
-        }, 500);
+        }, 450);
     }
 
     private onFail(): void {
         this.gameState = 'FAILED';
+        // Ошибка (падение в бездну) сбрасывает стрик в 0
         this.streak = 0;
         this.streakEl.innerText = 'STREAK ×0';
         this.shake = 12;
         this.audio.playFail();
+        this.showFeedback('MISSED', '#ef4444');
 
-        this.feedbackEl.innerText = 'MISSED';
-        this.feedbackEl.style.color = '#ef4444';
-        this.feedbackEl.style.opacity = '1';
-        setTimeout(() => { this.feedbackEl.style.opacity = '0'; }, 700);
-
-        this.resultTitle.innerText = 'VOID FALL';
+        // Окно ошибки строго по концепции (Раздел 18): RUN FAILED / TRY AGAIN
+        this.resultKicker.innerText = `SECTOR 0${this.currentSector}`;
+        this.resultKicker.style.color = '#64748b';
+        this.resultTitle.innerText = 'RUN FAILED';
         this.resultTitle.style.color = '#ef4444';
         this.resultReward.innerText = '+0 COINS';
-        this.retryButton.innerHTML = `RETRY SAME <span>↻</span>`;
+        this.retryButton.innerHTML = `TRY AGAIN <span>↻</span>`;
 
         setTimeout(() => {
+            this.clearFeedback();
             this.resultPanel.classList.add('visible');
         }, 400);
     }
 
     private draw(): void {
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const rect = this.canvas.getBoundingClientRect();
-
-        // Сброс контекста под текущий размер экрана
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Масштабирование виртуальных 960x540 под реальный canvas
         const scale = Math.min(this.canvas.width / this.V_WIDTH, this.canvas.height / this.V_HEIGHT);
         const offsetX = (this.canvas.width - this.V_WIDTH * scale) / 2;
         const offsetY = (this.canvas.height - this.V_HEIGHT * scale) / 2;
@@ -641,20 +708,18 @@ export class GameApp {
         this.ctx.translate(offsetX, offsetY);
         this.ctx.scale(scale, scale);
 
-        // Тряска и зум камеры
         this.ctx.save();
         if (this.shake > 0) {
             this.ctx.translate((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake);
         }
 
-        // Центрированный зум
         if (this.camera.zoom !== 1.0) {
             this.ctx.translate(this.V_WIDTH / 2, this.V_HEIGHT / 2);
             this.ctx.scale(this.camera.zoom, this.camera.zoom);
             this.ctx.translate(-this.V_WIDTH / 2, -this.V_HEIGHT / 2);
         }
 
-        // 1. Нити ветра
+        // 1. Потоки ветра
         this.ctx.save();
         for (const line of this.windLines) {
             this.ctx.strokeStyle = `rgba(56, 189, 248, ${line.alpha})`;
@@ -667,57 +732,56 @@ export class GameApp {
         this.ctx.restore();
 
         // 2. Платформы
-        const renderPlatform = (p: { x: number; y: number; width: number; height: number; springY: number }, isTarget: boolean) => {
+        const drawPlatform = (p: Platform, isTarget: boolean) => {
             const py = p.y + p.springY;
-            // Тень
+            // Тень платформы
             this.ctx.fillStyle = 'rgba(2, 6, 23, 0.6)';
             this.ctx.fillRect(p.x + 2, py + 8, p.width, p.height);
 
-            // Тело платформы
+            // Тело
             this.ctx.fillStyle = '#1e293b';
             this.ctx.fillRect(p.x, py, p.width, p.height);
 
-            // Верхняя кромка
+            // Кромка
             this.ctx.fillStyle = isTarget ? '#0284c7' : '#64748b';
             this.ctx.fillRect(p.x, py, p.width, 3);
 
-            // Зона PERFECT для целевой платформы
+            // Зона Perfect (35% центра)
             if (isTarget) {
-                const perfectW = p.width * 0.32;
-                const perfectX = p.x + (p.width - perfectW) / 2;
+                const pw = p.width * 0.35;
+                const px = p.x + (p.width - pw) / 2;
                 this.ctx.fillStyle = '#fbbf24';
                 this.ctx.shadowColor = '#fbbf24';
                 this.ctx.shadowBlur = 8;
-                this.ctx.fillRect(perfectX, py, perfectW, 4);
+                this.ctx.fillRect(px, py, pw, 4);
                 this.ctx.shadowBlur = 0;
             }
         };
 
-        renderPlatform(this.startPlatform, false);
-        renderPlatform(this.targetPlatform, true);
+        drawPlatform(this.startPlatform, false);
+        drawPlatform(this.targetPlatform, true);
 
-        // 3. VFX
+        // 3. Частицы и эффекты
         this.vfx.draw(this.ctx);
 
-        // 4. Персонаж со Squash & Stretch
+        // 4. Игрок
         const p = this.player;
         this.ctx.save();
         this.ctx.translate(p.x + p.width / 2, p.y + p.height);
         this.ctx.scale(p.scaleX, p.scaleY);
 
-        // Свечение и тело
         this.ctx.fillStyle = '#38bdf8';
         this.ctx.shadowColor = '#38bdf8';
         this.ctx.shadowBlur = 12;
         this.ctx.fillRect(-p.width / 2, -p.height, p.width, p.height);
         this.ctx.shadowBlur = 0;
 
-        // Неоновый визор
+        // Глаз
         this.ctx.fillStyle = '#ffffff';
         this.ctx.fillRect(p.width / 2 - 10, -p.height + 8, 6, 6);
         this.ctx.restore();
 
-        this.ctx.restore(); // Сброс камеры
+        this.ctx.restore();
     }
 
     private loop(now: number): void {
