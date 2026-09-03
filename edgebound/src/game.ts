@@ -1,9 +1,10 @@
 /**
  * EDGEBOUND — MASTER GAME ENGINE
- * 1. Физическая привязка кубика: кубик непрерывно едет на движущейся платформе во всех фазах.
- * 2. Защита от спам-кликов и накрутки секторов (FSM + Debounce Lock).
- * 3. Строгий расчет серии Perfect (Стрик) и награды по концепции.
- * 4. Чистый UI без наложений.
+ * Исправления:
+ * 1. Восстановление высоты персонажа: squash/stretch плавно возвращается к 1.0 в любом состоянии.
+ * 2. Полное устранение телепортации на краю платформы: координата контакта фиксируется точно в месте касания.
+ * 3. Честный порог касания подошвы (8px) без прилипания к пустоте.
+ * 4. Защита от спам-кликов и накрутки уровней.
  */
 
 // ============================================================================
@@ -52,7 +53,6 @@ class AudioEngine {
         if (this.isMuted || !this.ctx) return;
         const now = this.ctx.currentTime;
 
-        // Басовый удар веса
         const bassOsc = this.ctx.createOscillator();
         const bassGain = this.ctx.createGain();
         bassOsc.type = 'triangle';
@@ -257,9 +257,9 @@ export class GameApp {
     private resultTitle = document.getElementById('result-title')!;
     private resultReward = document.getElementById('result-reward')!;
 
-    // FSM и защита от спам-кликов
+    // Машина состояний
     private gameState: GameState = 'MENU';
-    private isTransitioning: boolean = false; // Блокировка повторных кликов
+    private isTransitioning: boolean = false;
 
     private streak = 0;
     private score = 0;
@@ -274,10 +274,10 @@ export class GameApp {
     private camera = { zoom: 1.0, targetZoom: 1.0 };
     private shake = 0;
 
-    // Проверенная физическая модель
+    // Параметры физики
     private readonly GRAVITY = 1250;
     private readonly JUMP_POWER = -560;
-    private readonly AIRTIME = (2 * 560) / 1250; // ~0.896 с
+    private readonly AIRTIME = (2 * 560) / 1250;
     private readonly HORIZONTAL_SPEED = 340;
 
     // Платформы
@@ -350,9 +350,6 @@ export class GameApp {
         }
     }
 
-    /**
-     * Единая диспетчеризация действий с защитой от спам-кликов
-     */
     private handleAction(): void {
         if (this.isTransitioning) return;
 
@@ -365,7 +362,6 @@ export class GameApp {
         } else if (this.gameState === 'RESULT_FAILED') {
             this.retrySameChallenge();
         }
-        // В состоянии LANDED_TRANSITION любые нажатия игнорируются!
     }
 
     private bindEvents(): void {
@@ -413,6 +409,7 @@ export class GameApp {
         this.attachedPlatform = null;
         this.player.vy = this.JUMP_POWER;
 
+        // Стретч при взлете
         this.player.scaleX = 0.72;
         this.player.scaleY = 1.35;
         this.audio.playJump();
@@ -432,7 +429,6 @@ export class GameApp {
         this.targetPlatform.speed = 1.6 + tier * 0.25;
         this.targetPlatform.amplitude = 50 + tier * 6;
 
-        // Расчет точки приземления
         const expectedVx = this.HORIZONTAL_SPEED + (this.wind.direction * this.wind.strength);
         const flightDistance = expectedVx * this.AIRTIME;
         const playerStartX = this.startPlatform.x + (this.startPlatform.width - this.player.width) / 2;
@@ -450,7 +446,6 @@ export class GameApp {
         this.player.scaleX = 1;
         this.player.scaleY = 1;
 
-        // Закрепляем кубик на платформе
         this.attachedPlatform = this.startPlatform;
         this.platformOffsetX = this.player.x - this.startPlatform.x;
 
@@ -468,7 +463,6 @@ export class GameApp {
         this.loadSector(this.currentSector, this.currentSeed);
         this.gameState = 'RUNNING';
 
-        // Небольшой кулдаун после рестарта, чтобы случайный клик не вызвал мгновенный прыжок
         setTimeout(() => {
             this.isTransitioning = false;
         }, 200);
@@ -514,7 +508,13 @@ export class GameApp {
         const effectiveDt = dt * this.timeScale;
         this.time += effectiveDt;
 
-        // 1. Ветер
+        // 1. ПЛАВНОЕ ВОССТАНОВЛЕНИЕ ФОРМЫ КУБИКА (работает ВСЕГДА: и на земле, и в воздухе)
+        // Math.max гарантирует красивый динамичный возврат даже во время медленного слоу-мо
+        const shapeRecoveryDt = Math.max(effectiveDt, dt * 0.45);
+        this.player.scaleX += (1 - this.player.scaleX) * 12 * shapeRecoveryDt;
+        this.player.scaleY += (1 - this.player.scaleY) * 12 * shapeRecoveryDt;
+
+        // 2. Ветер
         this.wind.current = this.wind.direction * this.wind.strength * (1 + Math.sin(this.time * 2.2) * 0.12);
         const absWind = Math.abs(this.wind.current);
         this.windArrow.innerText = this.wind.current >= 0 ? '→' : '←';
@@ -526,7 +526,7 @@ export class GameApp {
             if (line.x < -80) line.x = this.V_WIDTH + 80;
         }
 
-        // 2. Движение целевой платформы
+        // 3. Движение целевой платформы
         if (this.targetPlatform.baseX !== undefined && this.targetPlatform.amplitude !== undefined && this.targetPlatform.speed !== undefined) {
             this.targetPlatform.x = this.targetPlatform.baseX + Math.sin(this.time * this.targetPlatform.speed) * this.targetPlatform.amplitude;
         }
@@ -534,20 +534,17 @@ export class GameApp {
         this.startPlatform.springY += (0 - this.startPlatform.springY) * 14 * dt;
         this.targetPlatform.springY += (0 - this.targetPlatform.springY) * 14 * dt;
 
-        // 3. ✅ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: кубик следует за платформой ВСЕГДА, когда он grounded!
+        // 4. Физика персонажа
         if (this.player.grounded && this.attachedPlatform) {
+            // Кубик точно следует за платформой
             this.player.x = this.attachedPlatform.x + this.platformOffsetX;
             this.player.y = this.attachedPlatform.y + this.attachedPlatform.springY - this.player.height;
         } else if (this.gameState === 'RUNNING' && !this.player.grounded) {
-            // Полет только в активном состоянии RUNNING
             this.player.vy += this.GRAVITY * effectiveDt;
             this.player.vx = this.HORIZONTAL_SPEED + this.wind.current;
 
             this.player.x += this.player.vx * effectiveDt;
             this.player.y += this.player.vy * effectiveDt;
-
-            this.player.scaleX += (1 - this.player.scaleX) * 9 * effectiveDt;
-            this.player.scaleY += (1 - this.player.scaleY) * 9 * effectiveDt;
 
             this.checkCollisions(effectiveDt);
 
@@ -556,7 +553,7 @@ export class GameApp {
             }
         }
 
-        // 4. Камера
+        // 5. Камера и VFX
         this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * 6 * dt;
         if (this.shake > 0) {
             this.shake = Math.max(0, this.shake - dt * 25);
@@ -578,22 +575,26 @@ export class GameApp {
             { p: this.targetPlatform, isTarget: true }
         ];
 
+        // Честный порог контакта: кубик должен зайти на платформу хотя бы на 8px (1/4 подошвы)
+        const footContactMargin = 8;
+
         for (const { p, isTarget } of platforms) {
-            const overlapsX = px + pw > p.x && px < p.x + p.width;
+            const overlapsX = (px + pw - footContactMargin >= p.x) && (px + footContactMargin <= p.x + p.width);
             const crossesTop = prevBottom <= p.y + 16 && playerBottom >= p.y;
 
             if (overlapsX && crossesTop) {
                 this.player.grounded = true;
                 this.attachedPlatform = p;
 
-                // Аккуратная фиксация смещения внутри платформы
-                this.platformOffsetX = Math.max(0, Math.min(p.width - this.player.width, this.player.x - p.x));
+                // ✅ БЕЗ ТЕЛЕПОРТАЦИИ: сохраняем точный локальный отступ точки касания
+                this.platformOffsetX = this.player.x - p.x;
 
                 this.player.y = p.y - this.player.height;
                 this.player.vy = 0;
                 this.player.vx = 0;
 
-                this.player.scaleX = 1.38;
+                // Упругий сквош (сплющивание)
+                this.player.scaleX = 1.35;
                 this.player.scaleY = 0.65;
                 p.springY = 6;
 
@@ -609,7 +610,6 @@ export class GameApp {
     }
 
     private onLandedOnTarget(): void {
-        // Блокируем входящие клики во время анимации победы
         this.gameState = 'LANDED_TRANSITION';
 
         const target = this.targetPlatform;
@@ -665,12 +665,12 @@ export class GameApp {
         setTimeout(() => {
             this.clearFeedback();
             this.resultPanel.classList.add('visible');
-            this.gameState = 'RESULT_SUCCESS'; // Только теперь разрешаем кликнуть "NEXT"
+            this.gameState = 'RESULT_SUCCESS';
         }, 450);
     }
 
     private onFail(): void {
-        this.gameState = 'LANDED_TRANSITION'; // Блокируем клики во время анимации падения
+        this.gameState = 'LANDED_TRANSITION';
         this.streak = 0;
         this.streakEl.innerText = 'STREAK ×0';
         this.shake = 12;
@@ -687,7 +687,7 @@ export class GameApp {
         setTimeout(() => {
             this.clearFeedback();
             this.resultPanel.classList.add('visible');
-            this.gameState = 'RESULT_FAILED'; // Только теперь разрешаем кликнуть "RETRY"
+            this.gameState = 'RESULT_FAILED';
         }, 400);
     }
 
