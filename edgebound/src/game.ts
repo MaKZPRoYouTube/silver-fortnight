@@ -1,6 +1,7 @@
 /**
  * EDGEBOUND — COMPLETE PRODUCTION ENGINE
  * Все 8 паттернов + Кампания на 24 сектора + Динамическая камера + Яндекс SDK
+ * Исправлен RISK_SPLIT (Сектор 11): убрана расщелина, настроен ритмичный выбор ветром.
  */
 
 // ============================================================================
@@ -534,9 +535,6 @@ export class GameApp {
         this.vfx.spawnDust(this.player.x + this.player.width / 2, this.player.y + this.player.height, 10);
     }
 
-    /**
-     * 24-Секторная кампания с кривой сложности по дизайн-документу
-     */
     private getPatternForSector(sec: number): { type: PatternType; title: string } {
         const campaignMap: Record<number, { type: PatternType; title: string }> = {
             1: { type: 'STATIC_STEP', title: 'SECTOR 01 /// BASIC STEP' },
@@ -574,7 +572,6 @@ export class GameApp {
             return campaignMap[sec]!;
         }
 
-        // Бесконечный мастер-режим после 24-го сектора
         const endlessPatterns: PatternType[] = [
             'MOVING_PLATFORM', 'NARROW_GATE', 'DOUBLE_STEP', 'RISK_SPLIT', 'FALLING_PLATFORM', 'WIND_CORRIDOR', 'GUARDIAN_SEQUENCE'
         ];
@@ -594,13 +591,14 @@ export class GameApp {
         this.wind.direction = windCycle >= 0 ? 1 : -1;
         let windPower = (type === 'WIND_CORRIDOR') ? 50 + tier * 5 : 20 + tier * 6;
         if (type === 'STATIC_STEP' && sector === 1) windPower = 0;
+        if (type === 'RISK_SPLIT') windPower = 40; // Размах ветра для выбора между Safe и Risk
         this.wind.strength = windPower;
 
         // Расчетная дальность прыжка
-        const expectedVx = this.HORIZONTAL_SPEED + (this.wind.direction * this.wind.strength);
+        const expectedVx = this.HORIZONTAL_SPEED + (type === 'RISK_SPLIT' ? 0 : (this.wind.direction * this.wind.strength));
         const flightDistance = expectedVx * this.AIRTIME;
 
-        // 2. Генерация платформ по паттерну
+        // 2. Генерация платформ
         this.platforms = [];
         const startP: Platform = { id: 'start', x: 100, y: 390, width: 130, height: 18, springY: 0 };
         this.platforms.push(startP);
@@ -644,7 +642,7 @@ export class GameApp {
             }
 
             case 'NARROW_GATE': {
-                const w = Math.max(48, 75 - tier * 5); // Очень узкая платформа
+                const w = Math.max(48, 75 - tier * 5);
                 const isMoving = tier >= 3;
                 this.platforms.push({
                     id: 'target',
@@ -663,7 +661,6 @@ export class GameApp {
             }
 
             case 'DOUBLE_STEP': {
-                // Шаг 1 и Шаг 2
                 const w1 = 100;
                 const w2 = 95;
                 const step1Center = targetBaseCenter;
@@ -693,13 +690,29 @@ export class GameApp {
             }
 
             case 'RISK_SPLIT': {
-                // Две платформы: Safe (широкая, +100) и Risk (узкая, +250)
-                const safeW = 120;
-                const riskW = 55;
+                // ✅ ИСПРАВЛЕНО: единая платформа БЕЗ ДЫРЫ ПОСЕРЕДИНЕ!
+                // Слева Safe (110px), справа Risk (70px). Разделитель ровно по центру targetBaseCenter.
+                const safeW = 110;
+                const riskW = 70;
+                const dividingX = targetBaseCenter;
+
+                // 1. RISK справа (золотой, +250) - регистрируем первым для приоритета касания
+                this.platforms.push({
+                    id: 'risk',
+                    x: dividingX,
+                    y: 390,
+                    width: riskW,
+                    height: 18,
+                    springY: 0,
+                    isFinalTarget: true,
+                    isRisk: true
+                });
+
+                // 2. SAFE слева (надежный, +100)
                 this.platforms.push({
                     id: 'safe',
-                    x: targetBaseCenter - safeW - 25,
-                    y: 405, // чуть ниже
+                    x: dividingX - safeW,
+                    y: 390,
                     width: safeW,
                     height: 18,
                     springY: 0,
@@ -707,16 +720,6 @@ export class GameApp {
                     isRisk: false
                 });
 
-                this.platforms.push({
-                    id: 'risk',
-                    x: targetBaseCenter + 25,
-                    y: 375, // чуть выше
-                    width: riskW,
-                    height: 18,
-                    springY: 0,
-                    isFinalTarget: true,
-                    isRisk: true
-                });
                 this.stepTotal = 1;
                 break;
             }
@@ -757,7 +760,6 @@ export class GameApp {
             }
 
             case 'GUARDIAN_SEQUENCE': {
-                // Mini-Boss: 3 последовательные платформы
                 this.stepTotal = 3;
                 for (let i = 1; i <= 3; i++) {
                     const w = i === 3 ? 110 : 80;
@@ -781,7 +783,6 @@ export class GameApp {
 
         this.stepProgress = 0;
 
-        // Позиция игрока
         const playerStartX = startP.x + (startP.width - this.player.width) / 2;
         this.player.x = playerStartX;
         this.player.y = startP.y - this.player.height;
@@ -855,13 +856,17 @@ export class GameApp {
         const effectiveDt = dt * this.timeScale;
         this.time += effectiveDt;
 
-        // Плавное восстановление формы кубика
         const shapeRecoveryDt = Math.max(effectiveDt, dt * 0.45);
         this.player.scaleX += (1 - this.player.scaleX) * 12 * shapeRecoveryDt;
         this.player.scaleY += (1 - this.player.scaleY) * 12 * shapeRecoveryDt;
 
-        // Ветер
-        this.wind.current = this.wind.direction * this.wind.strength * (1 + Math.sin(this.time * 2.2) * 0.12);
+        // ✅ ИСПРАВЛЕНИЕ: в RISK_SPLIT ветер ритмично качается влево (Safe) и вправо (Risk)
+        if (this.currentPattern === 'RISK_SPLIT') {
+            this.wind.current = Math.sin(this.time * 2.2) * this.wind.strength;
+        } else {
+            this.wind.current = this.wind.direction * this.wind.strength * (1 + Math.sin(this.time * 2.2) * 0.12);
+        }
+
         const absWind = Math.abs(this.wind.current);
         this.windArrow.innerText = this.wind.current >= 0 ? '→' : '←';
         this.windFill.style.width = `${Math.min(100, Math.max(15, (absWind / 65) * 100))}%`;
@@ -872,14 +877,13 @@ export class GameApp {
             if (line.x < this.camera.x - 100) line.x = this.camera.x + this.V_WIDTH + 100;
         }
 
-        // Обновление платформ
+        // Платформы
         for (const p of this.platforms) {
             if (p.baseX !== undefined && p.amplitude && p.speed) {
                 p.x = p.baseX + Math.sin(this.time * p.speed) * p.amplitude;
             }
             p.springY += (0 - p.springY) * 14 * dt;
 
-            // Обрушение падающей платформы
             if (p.isFalling) {
                 p.fallSpeed = (p.fallSpeed || 0) + 850 * dt;
                 p.y += p.fallSpeed * dt;
@@ -887,7 +891,7 @@ export class GameApp {
             }
         }
 
-        // Позиция кубика
+        // Позиция игрока
         if (this.player.grounded && this.attachedPlatform) {
             this.player.x = this.attachedPlatform.x + this.platformOffsetX;
             this.player.y = this.attachedPlatform.y + this.attachedPlatform.springY - this.player.height;
@@ -905,7 +909,7 @@ export class GameApp {
             }
         }
 
-        // Скролл камеры за игроком (для многоступенчатых секторов)
+        // Камера
         this.camera.targetX = Math.max(0, this.player.x - 220);
         this.camera.x += (this.camera.targetX - this.camera.x) * 6 * dt;
 
@@ -950,7 +954,6 @@ export class GameApp {
                     }
                     this.onLandedOnTarget(p);
                 } else if (p.id.startsWith('step-') || p.id.startsWith('guardian-')) {
-                    // Промежуточный шаг
                     this.stepProgress++;
                     this.audio.playStep();
                     this.vfx.spawnDust(this.player.x + pw / 2, p.y, 8);
@@ -975,7 +978,7 @@ export class GameApp {
         const isPerfect = dist <= perfectRadius;
 
         let reward = 100;
-        if (target.isRisk) reward += 150; // Бонус за риск-платформу
+        if (target.isRisk) reward += 150;
 
         if (isPerfect) {
             this.streak++;
@@ -1043,7 +1046,6 @@ export class GameApp {
         this.resultTitle.style.color = '#ef4444';
         this.resultReward.innerText = '+0 COINS';
 
-        // Яндекс Игры: Спасение стрика за Rewarded Ad при серии от 3+ Perfect
         if (savedStreak >= 3) {
             this.retryButton.innerHTML = `★ SAVE STREAK (AD) ★`;
             this.retryButton.onclick = (e) => {
@@ -1058,7 +1060,6 @@ export class GameApp {
         } else {
             this.retryButton.innerHTML = `TRY AGAIN <span>↻</span>`;
             this.retryButton.onclick = null;
-            // Полноэкранная реклама с кулдауном
             this.yandex.showFullscreen();
         }
 
@@ -1091,7 +1092,6 @@ export class GameApp {
             this.ctx.translate(-this.V_WIDTH / 2, -this.V_HEIGHT / 2);
         }
 
-        // Смещение камеры при скролле
         this.ctx.translate(-this.camera.x, 0);
 
         // 1. Ветер
@@ -1112,7 +1112,7 @@ export class GameApp {
             this.ctx.fillStyle = 'rgba(2, 6, 23, 0.6)';
             this.ctx.fillRect(p.x + 2, py + 8, p.width, p.height);
 
-            // Тело
+            // Тело платформы
             this.ctx.fillStyle = p.isRisk ? '#78350f' : '#1e293b';
             this.ctx.fillRect(p.x, py, p.width, p.height);
 
@@ -1135,11 +1135,12 @@ export class GameApp {
                 this.ctx.shadowBlur = 0;
             }
 
-            // Метка RISK
-            if (p.isRisk) {
-                this.ctx.fillStyle = '#fbbf24';
+            // Метки для паттерна RISK_SPLIT
+            if (this.currentPattern === 'RISK_SPLIT') {
+                this.ctx.fillStyle = p.isRisk ? '#fbbf24' : '#38bdf8';
                 this.ctx.font = '900 10px sans-serif';
-                this.ctx.fillText('RISK +250', p.x + p.width / 2 - 25, py + 14);
+                const label = p.isRisk ? '★ RISK +250' : 'SAFE +100';
+                this.ctx.fillText(label, p.x + p.width / 2 - 28, py + 14);
             }
         }
 
@@ -1158,7 +1159,6 @@ export class GameApp {
         this.ctx.fillRect(-p.width / 2, -p.height, p.width, p.height);
         this.ctx.shadowBlur = 0;
 
-        // Глаз
         this.ctx.fillStyle = '#ffffff';
         this.ctx.fillRect(p.width / 2 - 10, -p.height + 8, 6, 6);
         this.ctx.restore();
