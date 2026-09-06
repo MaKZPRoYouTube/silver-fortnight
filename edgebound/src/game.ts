@@ -1,12 +1,9 @@
 /**
  * EDGEBOUND — MASTER PRODUCTION ENGINE
- * Полная версия:
- * 1. Мгновенный прыжок и старт по клику/тапу в любой точке экрана и по Пробелу.
- * 2. Разделение кнопок звука/магазина со сбросом фокуса (Пробел всегда прыгает).
- * 3. Органичный ветер без наслоений (18 раздельных эшелонов высоты).
- * 4. Магазин скинов за монеты + сохранение в Яндекс Облако.
- * 5. Неоновый шлейф прыжка, золотая вспышка на Perfect, реклама со звуковой паузой.
- * 6. Выверенная кампания 01-24 с таймингами и наглядным выбором в RISK_SPLIT.
+ * Обновления:
+ * 1. Устранено повторение уровней: разнообразный финал (23 - обвал, 24 - финал босс) + бесконечный процедурный Мастер-режим (25+).
+ * 2. Устранено кучкование ветра справа: сброс и равномерное распределение потока при смене секторов.
+ * 3. Мгновенный прыжок с первого клика/пробела, магазин скинов и полная интеграция Яндекс SDK.
  */
 
 // ============================================================================
@@ -85,8 +82,8 @@ const TRANSLATIONS = {
             20: 'СЕКТОР 20 /// УРАГАННЫЙ КОРИДОР',
             21: 'СЕКТОР 21 /// ОПАСНОСТЬ И ТРИУМФ',
             22: 'СЕКТОР 22 /// НУЛЕВОЙ ЗАПАС (32PX)',
-            23: 'СЕКТОР 23 /// ВРАТА СТРАЖА (МИНИ-БОСС)',
-            24: 'СЕКТОР 24 /// ЯДРО (ФИНАЛ)'
+            23: 'СЕКТОР 23 /// ДВОЙНОЙ ОБВАЛ (ПРЕДФИНАЛ)',
+            24: 'СЕКТОР 24 /// ЯДРО (ФИНАЛ БОСС)'
         }
     },
     en: {
@@ -142,7 +139,7 @@ const TRANSLATIONS = {
             20: 'SECTOR 20 /// HURRICANE',
             21: 'SECTOR 21 /// DANGER & GLORY',
             22: 'SECTOR 22 /// ZERO MARGIN (32PX)',
-            23: 'SECTOR 23 /// GUARDIAN GATE (MINI-BOSS)',
+            23: 'SECTOR 23 /// TWIN COLLAPSE (PRE-BOSS)',
             24: 'SECTOR 24 /// THE CORE (CLIMAX)'
         }
     }
@@ -712,7 +709,7 @@ export class GameApp {
     private attachedPlatform: Platform | null = null;
     private platformOffsetX = 0;
 
-    // Ветер (18 эшелонов с зазором >= 18px)
+    // Ветер (18 эшелонов)
     private wind = { direction: 1, strength: 0, current: 0 };
     private smoothWind = 0;
     private readonly TOTAL_WIND_SLOTS = 18;
@@ -736,10 +733,9 @@ export class GameApp {
         this.ctx = this.canvas.getContext('2d')!;
 
         this.initResize();
-        this.initStratifiedWind();
+        this.resetWindParticles(); // Равномерное начальное заполнение
         this.bindEvents();
 
-        // Синхронная подготовка первого сектора
         this.loadSector(this.currentSector, this.currentSeed);
         this.setupYandexSDK();
 
@@ -803,7 +799,11 @@ export class GameApp {
         resize();
     }
 
-    private initStratifiedWind(): void {
+    /**
+     * ✅ СБРОС И РАВНОМЕРНОЕ РАСПРЕДЕЛЕНИЕ ВЕТРА ПО ВСЕМУ ЭКРАНУ
+     * Вызывается при загрузке каждого сектора, гарантируя отсутствие скоплений справа.
+     */
+    private resetWindParticles(): void {
         this.windParticles = [];
         const yStart = 65;
         const yEnd = 465;
@@ -812,9 +812,11 @@ export class GameApp {
         for (let i = 0; i < this.TOTAL_WIND_SLOTS; i++) {
             const maxLife = 1.6 + Math.random() * 1.2;
             const slotY = yStart + i * slotHeight + (Math.random() - 0.5) * 6;
+            // Равномерный шаг по X относительно экрана (никаких скоплений у края!)
+            const startX = this.camera.x + (i / this.TOTAL_WIND_SLOTS) * this.V_WIDTH + (Math.random() - 0.5) * 40;
 
             this.windParticles.push({
-                x: Math.random() * this.V_WIDTH,
+                x: startX,
                 slotIndex: i,
                 y: slotY,
                 speed: 0.95 + Math.random() * 0.15,
@@ -844,7 +846,6 @@ export class GameApp {
     }
 
     private bindEvents(): void {
-        // Глобальный перехват ввода по экрану (с защитой от кнопок)
         window.addEventListener('pointerdown', (e) => {
             const target = e.target as HTMLElement | null;
             if (target && (target.closest('.hud-controls, #shop-panel') || target.id === 'sound-btn' || target.id === 'shop-btn')) {
@@ -854,7 +855,6 @@ export class GameApp {
             this.handleAction();
         });
 
-        // Пробел и стрелка вверх всегда прыгают
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space' || e.code === 'ArrowUp') {
                 e.preventDefault();
@@ -863,7 +863,6 @@ export class GameApp {
             }
         });
 
-        // Кнопка звука
         this.soundBtn.addEventListener('pointerdown', (e) => {
             e.stopPropagation();
             const newMuted = !this.audio.isMuted;
@@ -873,7 +872,6 @@ export class GameApp {
             (this.soundBtn as HTMLElement).blur();
         });
 
-        // Кнопка магазина
         this.shopBtn.addEventListener('pointerdown', (e) => {
             e.stopPropagation();
             this.openShop();
@@ -885,7 +883,6 @@ export class GameApp {
             this.closeShop();
         });
 
-        // Пауза при скрытии вкладки
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
                 this.audio.setMuted(true);
@@ -1013,6 +1010,10 @@ export class GameApp {
         this.vfx.spawnDust(this.player.x + this.player.width / 2, this.player.y + this.player.height, 10);
     }
 
+    /**
+     * ✅ КАМПАНИЯ 01-24 + БЕСКОНЕЧНЫЙ МАСТЕР-РЕЖИМ 25+
+     * Уровни больше не зацикливаются на одном виде!
+     */
     private getPatternForSector(sec: number): { type: PatternType; title: string } {
         const tr = this.t;
         const localized = tr.sectors as Record<number, string>;
@@ -1023,11 +1024,31 @@ export class GameApp {
             9: 'WIND_CORRIDOR', 10: 'NARROW_GATE', 11: 'RISK_SPLIT', 12: 'FALLING_PLATFORM',
             13: 'DOUBLE_STEP', 14: 'WIND_CORRIDOR', 15: 'MOVING_PLATFORM', 16: 'RISK_SPLIT',
             17: 'NARROW_GATE', 18: 'DOUBLE_STEP', 19: 'FALLING_PLATFORM', 20: 'WIND_CORRIDOR',
-            21: 'RISK_SPLIT', 22: 'NARROW_GATE', 23: 'GUARDIAN_SEQUENCE', 24: 'GUARDIAN_SEQUENCE'
+            21: 'RISK_SPLIT', 22: 'NARROW_GATE',
+            23: 'FALLING_PLATFORM', // ✅ Сектор 23: Двойной обвал (предфинал)
+            24: 'GUARDIAN_SEQUENCE'  // ✅ Сектор 24: Единственный кульминационный босс!
         };
 
-        const pType = patterns[sec] || 'MOVING_PLATFORM';
-        const pTitle = localized[sec] || `SECTOR ${sec} /// [${pType}]`;
+        if (sec <= 24 && patterns[sec]) {
+            const pType = patterns[sec]!;
+            const pTitle = localized[sec] || `SECTOR ${sec} /// [${pType}]`;
+            return { type: pType, title: pTitle };
+        }
+
+        // ✅ ПРОЦЕДУРНЫЙ МАСТЕР-РЕЖИМ (25+): чередуем все виды испытаний!
+        const ENDLESS_SEQUENCE: PatternType[] = [
+            'MOVING_PLATFORM',
+            'NARROW_GATE',
+            'DOUBLE_STEP',
+            'RISK_SPLIT',
+            'FALLING_PLATFORM',
+            'WIND_CORRIDOR',
+            'GUARDIAN_SEQUENCE'
+        ];
+        const pType = ENDLESS_SEQUENCE[(sec - 25) % ENDLESS_SEQUENCE.length]!;
+        const pTitle = this.yandex.lang === 'ru'
+            ? `СЕКТОР ${sec} /// МАСТЕР [${pType}]`
+            : `SECTOR ${sec} /// MASTER [${pType}]`;
 
         return { type: pType, title: pTitle };
     }
@@ -1038,6 +1059,12 @@ export class GameApp {
         this.objectiveEl.innerText = title;
 
         this.sectorTime = 0;
+        this.camera.targetX = 0;
+        this.camera.x = 0;
+
+        // ✅ Сбрасываем ветер при входе в сектор (устраняет скопление у краев)
+        this.resetWindParticles();
+
         const tier = Math.min(5, Math.floor((sector - 1) / 4));
 
         const windCycle = Math.sin(seed * 0.77 + sector * 1.3);
@@ -1048,6 +1075,10 @@ export class GameApp {
         else if (sector === 4) windPower = 16;
         else if (sector >= 5) {
             windPower = (type === 'WIND_CORRIDOR') ? 52 + tier * 4 : 22 + tier * 5;
+            // Процедурная вариация для бесконечного режима
+            if (sector >= 25) {
+                windPower += (seed % 15);
+            }
         }
         this.wind.strength = windPower;
 
@@ -1078,9 +1109,17 @@ export class GameApp {
 
             case 'MOVING_PLATFORM': {
                 const isIntro = sector === 3;
-                const w = isIntro ? 100 : Math.max(65, 78 - tier * 4);
-                const spd = isIntro ? 1.3 : 1.75 + tier * 0.22;
-                const amp = isIntro ? 50 : 75 + tier * 4;
+                let w = isIntro ? 100 : Math.max(62, 78 - tier * 4);
+                let spd = isIntro ? 1.3 : 1.75 + tier * 0.22;
+                let amp = isIntro ? 50 : 75 + tier * 4;
+
+                // Вариативность после 24-го сектора
+                if (sector >= 25) {
+                    w = Math.max(50, 75 - (seed % 20));
+                    spd = 1.9 + ((seed % 7) * 0.12);
+                    amp = 70 + (seed % 25);
+                }
+
                 const startPhase = isIntro ? 0 : (Math.PI / 2) - (spd * this.AIRTIME);
 
                 this.platforms.push({
@@ -1101,7 +1140,9 @@ export class GameApp {
             }
 
             case 'NARROW_GATE': {
-                const w = sector === 6 ? 52 : Math.max(32, 45 - tier * 3);
+                let w = sector === 6 ? 52 : Math.max(32, 45 - tier * 3);
+                if (sector >= 25) w = Math.max(28, 42 - (seed % 12));
+
                 const isMoving = sector >= 6;
                 const spd = 1.5 + tier * 0.2;
                 const amp = 35 + tier * 4;
@@ -1125,8 +1166,8 @@ export class GameApp {
             }
 
             case 'DOUBLE_STEP': {
-                const w1 = Math.max(75, 90 - tier * 4);
-                const w2 = Math.max(68, 80 - tier * 4);
+                const w1 = Math.max(70, 90 - tier * 4);
+                const w2 = Math.max(65, 80 - tier * 4);
                 const step1Center = targetBaseCenter;
                 const step2Center = step1Center + flightDistance;
                 const step2Moving = sector >= 8;
@@ -1161,7 +1202,7 @@ export class GameApp {
             }
 
             case 'RISK_SPLIT': {
-                const safeW = sector === 11 ? 110 : Math.max(70, 90 - tier * 5);
+                const safeW = sector === 11 ? 110 : Math.max(65, 90 - tier * 5);
                 const riskW = 55;
                 const riskSpd = 1.8 + tier * 0.2;
 
@@ -1195,8 +1236,8 @@ export class GameApp {
             }
 
             case 'FALLING_PLATFORM': {
-                const w1 = Math.max(75, 88 - tier * 3);
-                const w2 = Math.max(75, 88 - tier * 3);
+                const w1 = Math.max(70, 88 - tier * 3);
+                const w2 = Math.max(70, 88 - tier * 3);
                 const step1Center = targetBaseCenter;
                 const step2Center = step1Center + flightDistance;
 
@@ -1227,7 +1268,7 @@ export class GameApp {
             }
 
             case 'WIND_CORRIDOR': {
-                const w = Math.max(70, 85 - tier * 3);
+                const w = Math.max(68, 85 - tier * 3);
                 const spd = 1.7 + tier * 0.2;
                 const amp = 55 + tier * 4;
                 const phase = (Math.PI / 2) - (spd * this.AIRTIME);
@@ -1288,8 +1329,6 @@ export class GameApp {
         this.attachedPlatform = startP;
         this.platformOffsetX = this.player.x - startP.x;
 
-        this.camera.targetX = 0;
-        this.camera.x = 0;
         this.targetTimeScale = 1.0;
         this.timeScale = 1.0;
         this.camera.targetZoom = 1.0;
@@ -1372,31 +1411,29 @@ export class GameApp {
         // Движение ветра
         const windFlowSpeed = this.smoothWind * 2.2;
         const windDir = this.smoothWind >= 0 ? 1 : -1;
+        const leftBound = this.camera.x - 60;
+        const rightBound = this.camera.x + this.V_WIDTH + 60;
+        const fullSpan = this.V_WIDTH + 120;
 
         for (const p of this.windParticles) {
             p.life -= effectiveDt;
             p.x += windFlowSpeed * p.speed * effectiveDt;
 
-            const isOut = windDir >= 0
-                ? (p.x > this.camera.x + this.V_WIDTH + 60)
-                : (p.x < this.camera.x - 60);
+            // Циклическое перемещение без скопления у границы
+            if (p.x > rightBound) {
+                p.x -= fullSpan;
+            } else if (p.x < leftBound) {
+                p.x += fullSpan;
+            }
 
             if (p.life <= 0) {
                 p.maxLife = 1.6 + Math.random() * 1.2;
                 p.life = p.maxLife;
                 p.x = this.camera.x + Math.random() * this.V_WIDTH;
-            } else if (isOut) {
-                p.maxLife = 1.6 + Math.random() * 1.2;
-                p.life = p.maxLife;
-                if (windDir >= 0) {
-                    p.x = this.camera.x - 20 - Math.random() * 60;
-                } else {
-                    p.x = this.camera.x + this.V_WIDTH + 20 + Math.random() * 60;
-                }
             }
         }
 
-        // Платформы
+        // Обновление платформ
         for (const p of this.platforms) {
             if (p.baseX !== undefined && p.amplitude && p.speed) {
                 const ph = p.phase || 0;
@@ -1733,7 +1770,7 @@ export class GameApp {
             }
         }
 
-        // 3. VFX и Шлейф прыжка
+        // 3. VFX
         this.vfx.draw(this.ctx);
 
         // 4. Игрок со скином
