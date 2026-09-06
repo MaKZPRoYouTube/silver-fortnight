@@ -1,10 +1,10 @@
 /**
  * EDGEBOUND — COMPLETE PRODUCTION ENGINE
  * Обновления:
- * 1. Атмосферный органичный ветер с независимым жизненным циклом и плавным Sine Fade In/Out (лесенка полностью устранена!).
- * 2. Выжидание тайминга (Anti-Rush Phase): в уровнях 05+ прыжок на старте ведет в бездну, нужно ловить момент.
- * 3. Наглядный RISK_SPLIT: синяя SAFE внизу + парящий золотой RISK вверху.
- * 4. Двухступенчатый экшен FALLING_PLATFORM и плавная кривая сложности 01-24.
+ * 1. Равномерный атмосферный ветер по всему экрану (устранено скопление у края!).
+ * 2. Выжидание тайминга (Anti-Rush Phase): прыжок на старте в уровнях 05+ ведет в бездну.
+ * 3. Наглядный RISK_SPLIT: синяя SAFE внизу + парящий золотой RISK в воздухе.
+ * 4. Двухступенчатый экшен FALLING_PLATFORM и кампания 01-24.
  */
 
 // ============================================================================
@@ -449,7 +449,7 @@ export class GameApp {
     private attachedPlatform: Platform | null = null;
     private platformOffsetX = 0;
 
-    // ✅ Атмосферный органичный ветер (непрерывные случайные частицы)
+    // ✅ Равномерный атмосферный ветер
     private wind = { direction: 1, strength: 0, current: 0 };
     private smoothWind = 0;
     private windParticles: WindParticle[] = [];
@@ -492,21 +492,21 @@ export class GameApp {
     }
 
     /**
-     * ✅ АТМОСФЕРНЫЙ ВЕТЕР: Случайное непрерывное распределение по экрану.
-     * Никаких полос, сеток или ступенек — частицы рождаются и гаснут независимо!
+     * ✅ РАВНОМЕРНЫЙ ВЕТЕР ПО ВСЕМУ ЭКРАНУ:
+     * Частицы изначально распределены по всему полю зрения.
      */
     private initWindParticles(): void {
         this.windParticles = [];
-        for (let i = 0; i < 38; i++) {
-            const maxLife = 1.4 + Math.random() * 1.0;
+        for (let i = 0; i < 36; i++) {
+            const maxLife = 1.6 + Math.random() * 1.2;
             this.windParticles.push({
-                x: Math.random() * (this.V_WIDTH + 240) - 120,
+                x: Math.random() * this.V_WIDTH,
                 y: 50 + Math.random() * (this.V_HEIGHT - 100),
-                speed: 0.85 + Math.random() * 0.35,
-                len: 25 + Math.random() * 45,
-                life: Math.random() * maxLife, // разный возраст на старте исключает синхронность
+                speed: 0.9 + Math.random() * 0.3,
+                len: 25 + Math.random() * 40,
+                life: Math.random() * maxLife, // разный возраст для плавного цикла
                 maxLife: maxLife,
-                baseAlpha: 0.12 + Math.random() * 0.14
+                baseAlpha: 0.11 + Math.random() * 0.13
             });
         }
     }
@@ -671,7 +671,7 @@ export class GameApp {
                 const spd = isIntro ? 1.3 : 1.75 + tier * 0.22;
                 const amp = isIntro ? 50 : 75 + tier * 4;
 
-                // В секторах 05+ фаза смещена: если прыгнуть на старте, платформа будет в максимуме отклонения (+amp) в пустоте!
+                // В секторах 05+ фаза смещена: прыжок на старте ведет прямо в пустую бездну!
                 const startPhase = isIntro ? 0 : (Math.PI / 2) - (spd * this.AIRTIME);
 
                 this.platforms.push({
@@ -756,7 +756,6 @@ export class GameApp {
                 const riskW = 55;
                 const riskSpd = 1.8 + tier * 0.2;
 
-                // Безопасная синяя база внизу
                 this.platforms.push({
                     id: 'safe',
                     x: targetBaseCenter - safeW / 2,
@@ -768,7 +767,6 @@ export class GameApp {
                     isRisk: false
                 });
 
-                // Парящий золотой дрон в воздухе
                 this.platforms.push({
                     id: 'risk',
                     x: targetBaseCenter - 25 - riskW / 2,
@@ -954,7 +952,7 @@ export class GameApp {
         this.windArrow.innerText = this.smoothWind >= 0 ? '→' : '←';
         this.windFill.style.width = `${Math.min(100, Math.max(15, (absWind / 65) * 100))}%`;
 
-        // ✅ ОРГАНИЧНЫЙ ПОТОК ВЕТРА (НЕПРЕРЫВНЫЙ ЖИЗНЕННЫЙ ЦИКЛ БЕЗ СТУПЕНЕЙ И ЛЕСЕНОК)
+        // ✅ ИСПРАВЛЕНИЕ: Равномерное движение и рассеянное рождение по всему экрану
         const windFlowSpeed = this.smoothWind * 2.2;
         const windDir = this.smoothWind >= 0 ? 1 : -1;
 
@@ -962,24 +960,29 @@ export class GameApp {
             p.life -= effectiveDt;
             p.x += windFlowSpeed * p.speed * effectiveDt;
 
-            // Возрождение при истечении времени жизни или вылете за экран
             const isOut = windDir >= 0
-                ? (p.x > this.camera.x + this.V_WIDTH + 80)
-                : (p.x < this.camera.x - 80);
+                ? (p.x > this.camera.x + this.V_WIDTH + 60)
+                : (p.x < this.camera.x - 60);
 
-            if (p.life <= 0 || isOut) {
-                p.maxLife = 1.4 + Math.random() * 1.0;
+            // Если время жизни истекло — рождается в ЛЮБОЙ точке видимого экрана (Sine fade in)
+            if (p.life <= 0) {
+                p.maxLife = 1.6 + Math.random() * 1.2;
+                p.life = p.maxLife; // стартует с alpha = 0 (sin(pi) = 0)
+                p.x = this.camera.x + Math.random() * this.V_WIDTH; // Равномерно по ширине!
+                p.y = 50 + Math.random() * (this.V_HEIGHT - 100);
+                p.speed = 0.9 + Math.random() * 0.3;
+                p.len = 25 + Math.random() * 40;
+                p.baseAlpha = 0.11 + Math.random() * 0.13;
+            } else if (isOut) {
+                // Если физически вылетела за экран — входит с противоположной стороны
+                p.maxLife = 1.6 + Math.random() * 1.2;
                 p.life = p.maxLife;
-                // Появление с наветренной стороны в непрерывном случайном диапазоне Y
                 if (windDir >= 0) {
-                    p.x = this.camera.x - 20 - Math.random() * 140;
+                    p.x = this.camera.x - 20 - Math.random() * 60;
                 } else {
-                    p.x = this.camera.x + this.V_WIDTH + 20 + Math.random() * 140;
+                    p.x = this.camera.x + this.V_WIDTH + 20 + Math.random() * 60;
                 }
                 p.y = 50 + Math.random() * (this.V_HEIGHT - 100);
-                p.speed = 0.85 + Math.random() * 0.35;
-                p.len = 25 + Math.random() * 45;
-                p.baseAlpha = 0.12 + Math.random() * 0.14;
             }
         }
 
@@ -1046,7 +1049,7 @@ export class GameApp {
 
         const footContactMargin = 8;
 
-        // Сортировка по Y: сначала проверяем парящую платформу RISK (Y = 350)
+        // Сортировка по Y: сначала проверяем верхнюю платформу RISK (Y = 350)
         const sorted = [...this.platforms].sort((a, b) => a.y - b.y);
 
         for (const p of sorted) {
@@ -1217,7 +1220,7 @@ export class GameApp {
 
         this.ctx.translate(-this.camera.x, 0);
 
-        // 1. ✅ АТМОСФЕРНЫЙ ВЕТЕР: Мягкие непрерывные штрихи с плавным Sine Fade In/Out
+        // 1. ✅ АТМОСФЕРНЫЙ ВЕТЕР С МЯГКИМ FADE IN / FADE OUT
         this.ctx.save();
         this.ctx.lineCap = 'round';
         const windMag = Math.abs(this.smoothWind);
@@ -1225,7 +1228,6 @@ export class GameApp {
         const windDir = this.smoothWind >= 0 ? 1 : -1;
 
         for (const p of this.windParticles) {
-            // Синусоидальная прозрачность: 0 -> максимум -> 0
             const lifeRatio = Math.max(0, Math.min(1, p.life / p.maxLife));
             const currentAlpha = Math.sin(lifeRatio * Math.PI) * p.baseAlpha;
 
