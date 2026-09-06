@@ -1,18 +1,34 @@
 /**
- * EDGEBOUND — MASTER PRODUCTION ENGINE
- * Полное соответствие требованиям Яндекс Игр:
- * 1. Облачные сохранения (Yandex Player Data + LocalStorage Fallback).
- * 2. Глушение звука и пауза игры во время рекламы и сворачивания вкладки.
- * 3. Локализация RU / EN на базе окружения Яндекса.
- * 4. Таблицы лидеров (max_streak, total_score).
- * 5. Атмосферный ветер со стратификацией слоев (нулевое наслоение и перекрытие!).
- * 6. Кампания 01-24 с честным выжиданием таймингов и наглядным RISK_SPLIT.
+ * EDGEBOUND — MASTER GAME ENGINE
+ * Включает:
+ * 1. Кнопку звука (🔊/🔇) и глушение по требованиям Яндекс Игр.
+ * 2. Мета-прогрессию: магазин скинов за монеты с сохранением в Яндекс Облако.
+ * 3. Неоновый шлейф прыжка (Jump Trail) и золотую вспышку на Perfect.
+ * 4. Стратифицированный органичный ветер (0 наслоений!).
+ * 5. FSM, честный тайминг в 05+, наглядный RISK_SPLIT и 24 сектора.
  */
 
 // ============================================================================
-// 1. СИСТЕМА ЛОКАЛИЗАЦИИ (RU / EN)
+// 1. ЛОКАЛИЗАЦИЯ И СКИНЫ
 // ============================================================================
 type Lang = 'ru' | 'en';
+
+interface Skin {
+    id: string;
+    name: { ru: string; en: string };
+    cost: number;
+    primary: string;
+    glow: string;
+    trail: string;
+}
+
+const SKINS: Skin[] = [
+    { id: 'cyan', name: { ru: 'НЕОНОВЫЙ СИНИЙ', en: 'NEON CYAN' }, cost: 0, primary: '#38bdf8', glow: '#0284c7', trail: 'rgba(56, 189, 248, ' },
+    { id: 'gold', name: { ru: 'ЗОЛОТОЕ ЯДРО', en: 'SOLAR GOLD' }, cost: 350, primary: '#fbbf24', glow: '#d97706', trail: 'rgba(251, 191, 36, ' },
+    { id: 'violet', name: { ru: 'КИБЕРПАНК', en: 'CYBER VIOLET' }, cost: 800, primary: '#c084fc', glow: '#9333ea', trail: 'rgba(192, 132, 252, ' },
+    { id: 'emerald', name: { ru: 'МАТРИЦА', en: 'MATRIX EMERALD' }, cost: 1500, primary: '#34d399', glow: '#059669', trail: 'rgba(52, 211, 153, ' },
+    { id: 'crimson', name: { ru: 'КРАСНЫЙ РУБИН', en: 'CRIMSON FURY' }, cost: 3000, primary: '#f87171', glow: '#dc2626', trail: 'rgba(248, 113, 113, ' }
+];
 
 const TRANSLATIONS = {
     ru: {
@@ -41,6 +57,10 @@ const TRANSLATIONS = {
         badgeRisk: '★ РИСК +250',
         badgeSafe: 'БЕЗОПАСНО +100',
         badgeCrack: 'ТРЕЩИТ',
+        shopTitle: 'МАГАЗИН СКИНОВ',
+        shopClose: 'ЗАКРЫТЬ',
+        shopEquipped: 'НАДЕТО',
+        shopEquip: 'НАДЕТЬ',
         sectors: {
             1: 'СЕКТОР 01 /// ВВОДНЫЙ ПРЫЖОК',
             2: 'СЕКТОР 02 /// ЛЕГКИЙ ВЕТЕРОК',
@@ -94,6 +114,10 @@ const TRANSLATIONS = {
         badgeRisk: '★ RISK +250',
         badgeSafe: 'SAFE +100',
         badgeCrack: 'CRACK',
+        shopTitle: 'SKIN SHOP',
+        shopClose: 'CLOSE',
+        shopEquipped: 'EQUIPPED',
+        shopEquip: 'EQUIP',
         sectors: {
             1: 'SECTOR 01 /// WELCOME: TAP TO JUMP',
             2: 'SECTOR 02 /// GENTLE BREEZE',
@@ -124,11 +148,11 @@ const TRANSLATIONS = {
 };
 
 // ============================================================================
-// 2. АУДИОСИСТЕМА С ПОЛНЫМ ГЛУШЕНИЕМ ДЛЯ РЕКЛАМЫ (Web Audio API)
+// 2. АУДИОСИСТЕМА (Web Audio API)
 // ============================================================================
 class AudioEngine {
     private ctx: AudioContext | null = null;
-    private isMuted: boolean = false;
+    public isMuted: boolean = false;
 
     constructor() {
         const unlock = () => {
@@ -271,12 +295,14 @@ class AudioEngine {
 }
 
 // ============================================================================
-// 3. ПОЛНОФУНКЦИОНАЛЬНЫЙ МОСТ ЯНДЕКС ИГР (Yandex SDK)
+// 3. МОСТ ЯНДЕКС ИГР (Yandex SDK)
 // ============================================================================
 interface SaveData {
     coins: number;
     maxStreak: number;
     maxSector: number;
+    unlockedSkins: string[];
+    equippedSkin: string;
 }
 
 class YandexBridge {
@@ -287,7 +313,6 @@ class YandexBridge {
     public lang: Lang = 'ru';
 
     public async init(): Promise<SaveData | null> {
-        // Определение языка браузера по умолчанию
         const browserLang = navigator.language || (navigator as any).userLanguage || 'ru';
         this.lang = browserLang.startsWith('ru') ? 'ru' : 'en';
 
@@ -297,26 +322,17 @@ class YandexBridge {
                 this.ysdk = await (window as any).YaGames.init();
                 this.isAvailable = true;
 
-                // Определение языка из окружения Яндекса
                 if (this.ysdk.environment?.i18n?.lang) {
                     this.lang = this.ysdk.environment.i18n.lang === 'ru' ? 'ru' : 'en';
                 }
 
-                // Загрузка игрока
                 try {
                     this.player = await this.ysdk.getPlayer({ scopes: false });
-                } catch (e) {
-                    console.log('Гостевой режим игрока Яндекса');
-                }
+                } catch (e) {}
 
-                // Сигнал готовности для модерации
                 this.ysdk.features.LoadingAPI?.ready();
-                console.log(`✅ Яндекс SDK подключен! Язык: ${this.lang}`);
-
                 return await this.loadData();
-            } catch (e) {
-                console.warn('⚠️ Ошибка инициализации Яндекс SDK, локальный режим', e);
-            }
+            } catch (e) {}
         }
 
         return this.loadLocalFallback();
@@ -325,7 +341,7 @@ class YandexBridge {
     public async loadData(): Promise<SaveData | null> {
         if (this.player) {
             try {
-                const data = await this.player.getData(['coins', 'maxStreak', 'maxSector']);
+                const data = await this.player.getData(['coins', 'maxStreak', 'maxSector', 'unlockedSkins', 'equippedSkin']);
                 if (data && typeof data.coins === 'number') {
                     return data as SaveData;
                 }
@@ -341,13 +357,13 @@ class YandexBridge {
             } catch (e) {}
         }
         try {
-            localStorage.setItem('edgebound_save', JSON.stringify(data));
+            localStorage.setItem('edgebound_save_v2', JSON.stringify(data));
         } catch (e) {}
     }
 
     private loadLocalFallback(): SaveData | null {
         try {
-            const raw = localStorage.getItem('edgebound_save');
+            const raw = localStorage.getItem('edgebound_save_v2');
             if (raw) return JSON.parse(raw);
         } catch (e) {}
         return null;
@@ -372,7 +388,6 @@ class YandexBridge {
                 }
             });
         } else {
-            console.log('📺 [Реклама] Межстраничная реклама (тест)');
             onOpen();
             setTimeout(onClose, 500);
         }
@@ -389,7 +404,6 @@ class YandexBridge {
                 }
             });
         } else {
-            console.log('🎁 [Реклама за вознаграждение] Стрик спасен (тест)');
             onOpen();
             setTimeout(() => {
                 onRewarded();
@@ -432,9 +446,21 @@ interface Shockwave {
     color: string;
 }
 
+interface TrailGhost {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    scaleX: number;
+    scaleY: number;
+    alpha: number;
+    colorPrefix: string;
+}
+
 class VFXSystem {
     public particles: Particle[] = [];
     public shockwaves: Shockwave[] = [];
+    public trails: TrailGhost[] = [];
 
     public spawnDust(x: number, y: number, count = 10): void {
         for (let i = 0; i < count; i++) {
@@ -491,6 +517,14 @@ class VFXSystem {
         }
     }
 
+    public addTrail(x: number, y: number, width: number, height: number, scaleX: number, scaleY: number, colorPrefix: string): void {
+        this.trails.push({
+            x, y, width, height, scaleX, scaleY,
+            alpha: 0.45,
+            colorPrefix
+        });
+    }
+
     public update(dt: number): void {
         for (let i = this.particles.length - 1; i >= 0; i--) {
             const p = this.particles[i]!;
@@ -507,10 +541,28 @@ class VFXSystem {
             s.alpha -= dt * 2.5;
             if (s.alpha <= 0) this.shockwaves.splice(i, 1);
         }
+
+        for (let i = this.trails.length - 1; i >= 0; i--) {
+            const t = this.trails[i]!;
+            t.alpha -= dt * 3.5;
+            if (t.alpha <= 0) this.trails.splice(i, 1);
+        }
     }
 
     public draw(ctx: CanvasRenderingContext2D): void {
         ctx.save();
+
+        // 1. Шлейф прыжка персонажа
+        for (const t of this.trails) {
+            ctx.save();
+            ctx.translate(t.x + t.width / 2, t.y + t.height);
+            ctx.scale(t.scaleX, t.scaleY);
+            ctx.fillStyle = `${t.colorPrefix}${t.alpha})`;
+            ctx.fillRect(-t.width / 2, -t.height, t.width, t.height);
+            ctx.restore();
+        }
+
+        // 2. Кольца шоквейва
         for (const s of this.shockwaves) {
             ctx.save();
             ctx.strokeStyle = s.color;
@@ -522,6 +574,7 @@ class VFXSystem {
             ctx.restore();
         }
 
+        // 3. Частицы
         for (const p of this.particles) {
             ctx.save();
             ctx.fillStyle = p.color;
@@ -565,7 +618,6 @@ interface Platform {
     isRisk?: boolean;
 }
 
-// Стратифицированная частица ветра (гарантированное отсутствие наслоения)
 interface StratifiedWindParticle {
     x: number;
     slotIndex: number;
@@ -577,7 +629,7 @@ interface StratifiedWindParticle {
     baseAlpha: number;
 }
 
-type GameState = 'MENU' | 'RUNNING' | 'LANDED_TRANSITION' | 'RESULT_SUCCESS' | 'RESULT_FAILED' | 'PAUSED';
+type GameState = 'MENU' | 'RUNNING' | 'LANDED_TRANSITION' | 'RESULT_SUCCESS' | 'RESULT_FAILED' | 'PAUSED' | 'SHOP';
 
 // ============================================================================
 // 6. ГЛАВНЫЙ ИГРОВОЙ ДВИЖОК
@@ -601,8 +653,14 @@ export class GameApp {
     private objectiveEl = document.getElementById('objective')!;
     private startPanel = document.getElementById('start-panel')!;
     private resultPanel = document.getElementById('result-panel')!;
+    private shopPanel = document.getElementById('shop-panel')!;
     private startButton = document.getElementById('start-button')!;
     private retryButton = document.getElementById('retry-button')!;
+    private soundBtn = document.getElementById('sound-btn')!;
+    private shopBtn = document.getElementById('shop-btn')!;
+    private shopCloseBtn = document.getElementById('shop-close-btn')!;
+    private shopCoinsDisplay = document.getElementById('shop-coins-display')!;
+    private skinsGrid = document.getElementById('skins-grid')!;
     private feedbackEl = document.getElementById('feedback')!;
     private resultKicker = document.getElementById('result-kicker')!;
     private resultTitle = document.getElementById('result-title')!;
@@ -621,12 +679,20 @@ export class GameApp {
     private currentSector = 1;
     private currentSeed = 1001;
 
+    // Мета-прогрессия (Скины)
+    private unlockedSkins: string[] = ['cyan'];
+    private equippedSkinId: string = 'cyan';
+
+    // Вспышка на Perfect
+    private flashAlpha = 0;
+
     // Таймеры
     private sectorTime = 0;
     private timeScale = 1.0;
     private targetTimeScale = 1.0;
     private lastFrameTime = performance.now();
     private feedbackTimeout: number | null = null;
+    private trailTimer = 0;
 
     // Камера
     private camera = { x: 0, targetX: 0, zoom: 1.0, targetZoom: 1.0 };
@@ -648,7 +714,7 @@ export class GameApp {
     private attachedPlatform: Platform | null = null;
     private platformOffsetX = 0;
 
-    // ✅ СТРАТИФИЦИРОВАННЫЙ ВЕТЕР: 18 эшелонов с разделением по высоте (0 наслоений!)
+    // ✅ СТРАТИФИЦИРОВАННЫЙ ВЕТЕР: 18 эшелонов с шагом >= 18px (0 наслоений!)
     private wind = { direction: 1, strength: 0, current: 0 };
     private smoothWind = 0;
     private readonly TOTAL_WIND_SLOTS = 18;
@@ -683,13 +749,24 @@ export class GameApp {
         return TRANSLATIONS[this.yandex.lang];
     }
 
+    private get currentSkin(): Skin {
+        return SKINS.find((s) => s.id === this.equippedSkinId) || SKINS[0]!;
+    }
+
     private async setupYandexSDK(): Promise<void> {
         const saved = await this.yandex.init();
         if (saved) {
             this.score = saved.coins || 0;
             this.maxStreak = saved.maxStreak || 0;
             this.currentSector = Math.max(1, saved.maxSector || 1);
+            if (Array.isArray(saved.unlockedSkins)) this.unlockedSkins = saved.unlockedSkins;
+            if (saved.equippedSkin) this.equippedSkinId = saved.equippedSkin;
         }
+
+        // Сохранение настроек звука
+        const savedMute = localStorage.getItem('edgebound_muted') === 'true';
+        this.audio.setMuted(savedMute);
+        this.soundBtn.textContent = savedMute ? '🔇' : '🔊';
 
         this.applyLocalization();
         this.loadSector(this.currentSector, this.currentSeed);
@@ -697,7 +774,6 @@ export class GameApp {
 
     private applyLocalization(): void {
         const tr = this.t;
-        // Обновление статических элементов интерфейса
         const brand = document.querySelector('.brand');
         if (brand) brand.innerHTML = `EDGEBOUND <span>///</span>`;
 
@@ -728,10 +804,8 @@ export class GameApp {
     }
 
     /**
-     * ✅ СТРАТИФИЦИРОВАННЫЙ ВЕТЕР:
-     * Каждая частица жестко привязана к своему высотному слоту.
-     * Расстояние между любыми полосами по высоте строго >= 18 пикселей.
-     * Наслоение линий друг на друга математически невозможно!
+     * ✅ СТРАТИФИКАЦИЯ ЭШЕЛОНОВ ВЕТРА (0 наслоений!):
+     * Каждая полоса живет строго в своем высотном эшелоне.
      */
     private initStratifiedWind(): void {
         this.windParticles = [];
@@ -741,13 +815,13 @@ export class GameApp {
 
         for (let i = 0; i < this.TOTAL_WIND_SLOTS; i++) {
             const maxLife = 1.6 + Math.random() * 1.2;
-            const slotY = yStart + i * slotHeight + (Math.random() - 0.5) * 6; // контролируемый микро-разброс
+            const slotY = yStart + i * slotHeight + (Math.random() - 0.5) * 6;
 
             this.windParticles.push({
                 x: Math.random() * this.V_WIDTH,
                 slotIndex: i,
                 y: slotY,
-                speed: 0.95 + Math.random() * 0.15, // равные скорости потока
+                speed: 0.95 + Math.random() * 0.15,
                 len: 26 + Math.random() * 32,
                 life: Math.random() * maxLife,
                 maxLife,
@@ -793,7 +867,27 @@ export class GameApp {
             this.handleAction();
         });
 
-        // ✅ ТРЕБОВАНИЕ МОДЕРАЦИИ: пауза и глушение звука при сворачивании вкладки
+        // ✅ Кнопка переключения звука
+        this.soundBtn.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            const newMuted = !this.audio.isMuted;
+            this.audio.setMuted(newMuted);
+            this.soundBtn.textContent = newMuted ? '🔇' : '🔊';
+            localStorage.setItem('edgebound_muted', String(newMuted));
+        });
+
+        // ✅ Кнопка магазина
+        this.shopBtn.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            this.openShop();
+        });
+
+        this.shopCloseBtn.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            this.closeShop();
+        });
+
+        // Пауза и глушение звука при сворачивании вкладки
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
                 this.audio.setMuted(true);
@@ -803,12 +897,104 @@ export class GameApp {
                 }
             } else {
                 if (!this.isPausedForAd) {
-                    this.audio.setMuted(false);
+                    const savedMute = localStorage.getItem('edgebound_muted') === 'true';
+                    this.audio.setMuted(savedMute);
                     if (this.gameState === 'PAUSED') {
                         this.gameState = this.previousState;
                     }
                 }
             }
+        });
+    }
+
+    // ========================================================================
+    // МАГАЗИН СКИНОВ (МЕТА-ПРОГРЕССИЯ)
+    // ========================================================================
+    private openShop(): void {
+        if (this.gameState === 'RUNNING') {
+            this.previousState = 'RUNNING';
+        } else {
+            this.previousState = this.gameState;
+        }
+        this.gameState = 'SHOP';
+        this.renderShop();
+        this.shopPanel.classList.add('visible');
+    }
+
+    private closeShop(): void {
+        this.shopPanel.classList.remove('visible');
+        this.gameState = this.previousState;
+    }
+
+    private renderShop(): void {
+        const tr = this.t;
+        this.shopCoinsDisplay.textContent = `💰 ${this.score} ${tr.coins}`;
+        this.skinsGrid.innerHTML = '';
+
+        for (const skin of SKINS) {
+            const isUnlocked = this.unlockedSkins.includes(skin.id);
+            const isEquipped = this.equippedSkinId === skin.id;
+
+            const card = document.createElement('div');
+            card.className = `skin-card ${isEquipped ? 'active' : ''}`;
+
+            const preview = document.createElement('div');
+            preview.className = 'skin-preview';
+            preview.style.backgroundColor = skin.primary;
+            preview.style.boxShadow = `0 0 10px ${skin.glow}`;
+
+            const name = document.createElement('div');
+            name.className = 'skin-name';
+            name.textContent = skin.name[this.yandex.lang];
+
+            const btn = document.createElement('button');
+            btn.className = 'skin-action';
+
+            if (isEquipped) {
+                btn.className += ' equipped';
+                btn.textContent = tr.shopEquipped;
+            } else if (isUnlocked) {
+                btn.className += ' equip';
+                btn.textContent = tr.shopEquip;
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    this.equippedSkinId = skin.id;
+                    this.saveMeta();
+                    this.renderShop();
+                };
+            } else {
+                btn.className += ' buy';
+                btn.textContent = `${skin.cost} 💰`;
+                if (this.score >= skin.cost) {
+                    btn.onclick = (e) => {
+                        e.stopPropagation();
+                        this.score -= skin.cost;
+                        this.unlockedSkins.push(skin.id);
+                        this.equippedSkinId = skin.id;
+                        this.scoreEl.innerText = String(this.score).padStart(4, '0');
+                        this.saveMeta();
+                        this.renderShop();
+                    };
+                } else {
+                    btn.style.opacity = '0.5';
+                    btn.style.cursor = 'not-allowed';
+                }
+            }
+
+            card.appendChild(preview);
+            card.appendChild(name);
+            card.appendChild(btn);
+            this.skinsGrid.appendChild(card);
+        }
+    }
+
+    private saveMeta(): void {
+        this.yandex.saveData({
+            coins: this.score,
+            maxStreak: this.maxStreak,
+            maxSector: this.currentSector,
+            unlockedSkins: this.unlockedSkins,
+            equippedSkin: this.equippedSkinId
         });
     }
 
@@ -824,19 +1010,6 @@ export class GameApp {
         setTimeout(() => {
             this.isTransitioning = false;
         }, 150);
-    }
-
-    private jump(): void {
-        if (!this.player.grounded) return;
-
-        this.player.grounded = false;
-        this.attachedPlatform = null;
-        this.player.vy = this.JUMP_POWER;
-
-        this.player.scaleX = 0.72;
-        this.player.scaleY = 1.35;
-        this.audio.playJump();
-        this.vfx.spawnDust(this.player.x + this.player.width / 2, this.player.y + this.player.height, 10);
     }
 
     private getPatternForSector(sec: number): { type: PatternType; title: string } {
@@ -987,7 +1160,6 @@ export class GameApp {
             }
 
             case 'RISK_SPLIT': {
-                // Синяя SAFE внизу + парящая золотая RISK в воздухе
                 const safeW = sector === 11 ? 110 : Math.max(70, 90 - tier * 5);
                 const riskW = 55;
                 const riskSpd = 1.8 + tier * 0.2;
@@ -1145,13 +1317,7 @@ export class GameApp {
         this.currentSector++;
         this.currentSeed = Math.floor(Math.random() * 100000);
 
-        // Облачное сохранение максимального сектора
-        this.yandex.saveData({
-            coins: this.score,
-            maxStreak: this.maxStreak,
-            maxSector: this.currentSector
-        });
-
+        this.saveMeta();
         this.loadSector(this.currentSector, this.currentSeed);
         this.gameState = 'RUNNING';
 
@@ -1180,7 +1346,7 @@ export class GameApp {
     }
 
     private update(dt: number): void {
-        if (this.gameState === 'PAUSED' || this.isPausedForAd) return;
+        if (this.gameState === 'PAUSED' || this.gameState === 'SHOP' || this.isPausedForAd) return;
 
         this.timeScale += (this.targetTimeScale - this.timeScale) * 8 * dt;
         const effectiveDt = dt * this.timeScale;
@@ -1190,6 +1356,10 @@ export class GameApp {
         this.player.scaleX += (1 - this.player.scaleX) * 12 * shapeRecoveryDt;
         this.player.scaleY += (1 - this.player.scaleY) * 12 * shapeRecoveryDt;
 
+        if (this.flashAlpha > 0) {
+            this.flashAlpha = Math.max(0, this.flashAlpha - dt * 2.8);
+        }
+
         // Ветер
         this.wind.current = this.wind.direction * this.wind.strength * (1 + Math.sin(this.sectorTime * 2.2) * 0.12);
         this.smoothWind += (this.wind.current - this.smoothWind) * 4 * effectiveDt;
@@ -1198,7 +1368,7 @@ export class GameApp {
         this.windArrow.innerText = this.smoothWind >= 0 ? '→' : '←';
         this.windFill.style.width = `${Math.min(100, Math.max(15, (absWind / 65) * 100))}%`;
 
-        // ✅ ДВИЖЕНИЕ СТРАТИФИЦИРОВАННОГО ВЕТРА:
+        // ✅ ДВИЖЕНИЕ ВЕТРА БЕЗ НАСЛОЕНИЙ
         const windFlowSpeed = this.smoothWind * 2.2;
         const windDir = this.smoothWind >= 0 ? 1 : -1;
 
@@ -1210,7 +1380,6 @@ export class GameApp {
                 ? (p.x > this.camera.x + this.V_WIDTH + 60)
                 : (p.x < this.camera.x - 60);
 
-            // Респаун строго в своем высотном слоте
             if (p.life <= 0) {
                 p.maxLife = 1.6 + Math.random() * 1.2;
                 p.life = p.maxLife;
@@ -1226,7 +1395,7 @@ export class GameApp {
             }
         }
 
-        // Обновление платформ по sectorTime
+        // Обновление платформ
         for (const p of this.platforms) {
             if (p.baseX !== undefined && p.amplitude && p.speed) {
                 const ph = p.phase || 0;
@@ -1248,7 +1417,7 @@ export class GameApp {
             }
         }
 
-        // Игрок
+        // Физика и шлейф игрока
         if (this.player.grounded && this.attachedPlatform) {
             this.player.x = this.attachedPlatform.x + this.platformOffsetX;
             this.player.y = this.attachedPlatform.y + this.attachedPlatform.springY - this.player.height;
@@ -1258,6 +1427,18 @@ export class GameApp {
 
             this.player.x += this.player.vx * effectiveDt;
             this.player.y += this.player.vy * effectiveDt;
+
+            // ✅ Добавление неонового шлейфа в воздухе
+            this.trailTimer += effectiveDt;
+            if (this.trailTimer >= 0.03) {
+                this.trailTimer = 0;
+                this.vfx.addTrail(
+                    this.player.x, this.player.y,
+                    this.player.width, this.player.height,
+                    this.player.scaleX, this.player.scaleY,
+                    this.currentSkin.trail
+                );
+            }
 
             this.checkCollisions(effectiveDt);
 
@@ -1355,6 +1536,7 @@ export class GameApp {
             this.timeScale = 0.18;
             this.targetTimeScale = 1.0;
             this.camera.targetZoom = 1.08;
+            this.flashAlpha = 0.3; // ✅ Золотая вспышка на Perfect
             setTimeout(() => { this.camera.targetZoom = 1.0; }, 300);
 
             this.shake = 9;
@@ -1383,11 +1565,7 @@ export class GameApp {
 
         this.score += reward;
         this.yandex.submitScore(this.maxStreak, this.score);
-        this.yandex.saveData({
-            coins: this.score,
-            maxStreak: this.maxStreak,
-            maxSector: this.currentSector
-        });
+        this.saveMeta();
 
         this.streakEl.innerText = `${tr.streak} ×${this.streak}`;
         this.scoreEl.innerText = String(this.score).padStart(4, '0');
@@ -1416,7 +1594,6 @@ export class GameApp {
         this.resultTitle.style.color = '#ef4444';
         this.resultReward.innerText = `+0 ${tr.coins}`;
 
-        // Яндекс Игры: Спасение стрика за Rewarded Ad
         if (savedStreak >= 3) {
             this.retryButton.innerHTML = tr.saveStreakButton;
             this.retryButton.onclick = (e) => {
@@ -1434,7 +1611,8 @@ export class GameApp {
                     },
                     () => {
                         this.isPausedForAd = false;
-                        this.audio.setMuted(false);
+                        const savedMute = localStorage.getItem('edgebound_muted') === 'true';
+                        this.audio.setMuted(savedMute);
                     }
                 );
             };
@@ -1442,14 +1620,14 @@ export class GameApp {
             this.retryButton.innerHTML = tr.retryButton;
             this.retryButton.onclick = null;
 
-            // Межстраничная реклама с глушением звука и паузой
             this.isPausedForAd = true;
             this.audio.setMuted(true);
             this.yandex.showFullscreen(
                 () => {},
                 () => {
                     this.isPausedForAd = false;
-                    this.audio.setMuted(false);
+                    const savedMute = localStorage.getItem('edgebound_muted') === 'true';
+                    this.audio.setMuted(savedMute);
                 }
             );
         }
@@ -1485,7 +1663,7 @@ export class GameApp {
 
         this.ctx.translate(-this.camera.x, 0);
 
-        // 1. ✅ СТРАТИФИЦИРОВАННЫЙ ВЕТЕР (0 наслоений, чистое разделение слоев)
+        // 1. ВЕТЕР
         this.ctx.save();
         this.ctx.lineCap = 'round';
         const windMag = Math.abs(this.smoothWind);
@@ -1555,17 +1733,18 @@ export class GameApp {
             }
         }
 
-        // 3. VFX
+        // 3. VFX и Шлейф прыжка
         this.vfx.draw(this.ctx);
 
-        // 4. Игрок
+        // 4. Игрок с надетым скином
         const p = this.player;
+        const skin = this.currentSkin;
         this.ctx.save();
         this.ctx.translate(p.x + p.width / 2, p.y + p.height);
         this.ctx.scale(p.scaleX, p.scaleY);
 
-        this.ctx.fillStyle = '#38bdf8';
-        this.ctx.shadowColor = '#38bdf8';
+        this.ctx.fillStyle = skin.primary;
+        this.ctx.shadowColor = skin.glow;
         this.ctx.shadowBlur = 12;
         this.ctx.fillRect(-p.width / 2, -p.height, p.width, p.height);
         this.ctx.shadowBlur = 0;
@@ -1574,7 +1753,15 @@ export class GameApp {
         this.ctx.fillRect(p.width / 2 - 10, -p.height + 8, 6, 6);
         this.ctx.restore();
 
-        this.ctx.restore();
+        this.ctx.restore(); // Сброс камеры
+
+        // 5. Золотая вспышка на Perfect
+        if (this.flashAlpha > 0) {
+            this.ctx.save();
+            this.ctx.fillStyle = `rgba(251, 191, 36, ${this.flashAlpha})`;
+            this.ctx.fillRect(0, 0, this.V_WIDTH, this.V_HEIGHT);
+            this.ctx.restore();
+        }
     }
 
     private loop(now: number): void {
