@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -12,62 +12,56 @@
     <main class="game-shell" aria-label="EDGEBOUND game">
       <canvas id="game" aria-label="Tap to jump"></canvas>
       
-      <!-- Верхний HUD -->
+      <!-- HUD -->
       <section class="hud" aria-live="polite">
-        <div class="hud-left">
-          <div class="brand">EDGEBOUND <span>///</span></div>
-          <button id="shop-btn" class="hud-btn">SKINS ◈</button>
-        </div>
+        <div class="brand">EDGEBOUND <span>///</span></div>
         <div class="hud-stats">
-          <span id="streak">STREAK ×0</span>
+          <span id="streak">СТРИК ×0</span>
           <strong id="score">0000</strong>
         </div>
         <div class="wind-meter">
-          <span class="wind-label">WIND</span>
+          <span class="wind-label">ВЕТЕР</span>
           <i id="wind-arrow">→</i>
           <div class="wind-track"><b id="wind-fill"></b></div>
         </div>
-        <p id="objective">SECTOR 01 /// WELCOME: TAP TO JUMP</p>
+        <div class="hud-controls">
+          <button id="sound-btn" class="icon-btn" aria-label="Звук">🔊</button>
+          <button id="shop-btn" class="icon-btn" aria-label="Магазин">🛍️</button>
+        </div>
+        <p id="objective">ЗАГРУЗКА...</p>
       </section>
 
-      <!-- Стартовая панель -->
+      <!-- Панель старта -->
       <section id="start-panel" class="panel visible">
-        <p class="eyebrow">EDGEBOUND /// PROTOCOL</p>
-        <h1>FIND THE<br /><em>EDGE.</em></h1>
-        <p>One tap. One jump.<br />Land in the core for a <b>PERFECT.</b></p>
-        <button id="start-button">DROP IN <span>↗</span></button>
-        <small>SPACE / CLICK / TAP</small>
+        <p class="eyebrow">SECTOR 01 / ONBOARDING</p>
+        <h1>НАЙДИ СВОЮ<br /><em>ГРАНЬ.</em></h1>
+        <p>Одно касание. Один прыжок.<br />Попади в ядро для <b>ИДЕАЛЬНО.</b></p>
+        <button id="start-button">В БОЙ <span>↗</span></button>
+        <small>ПРОБЕЛ / КЛИК / КАСАНИЕ</small>
       </section>
 
-      <!-- Панель результата раунда -->
+      <!-- Панель результата -->
       <section id="result-panel" class="panel">
-        <p id="result-kicker" class="eyebrow">LANDING CONFIRMED</p>
-        <h2 id="result-title">PERFECT!</h2>
-        <p id="result-reward">+200 COINS</p>
-        <button id="retry-button">NEXT CHALLENGE <span>↗</span></button>
+        <p id="result-kicker" class="eyebrow">ПРИЗЕМЛЕНИЕ ПОДТВЕРЖДЕНО</p>
+        <h2 id="result-title">ИДЕАЛЬНО!</h2>
+        <p id="result-reward">+200 МОНЕТ</p>
+        <button id="retry-button">СЛЕДУЮЩИЙ СЕКТОР <span>↗</span></button>
       </section>
 
-      <!-- Панель финала кампании (Сектор 24) -->
-      <section id="victory-panel" class="panel">
-        <p class="eyebrow">SECTOR 24 COMPLETED /// PROTOCOL OVERRIDE</p>
-        <h2 style="color: #fbbf24;">SECTOR 24 CLEARED!</h2>
-        <p>You have conquered the Edge and defeated the Guardian Core.<br />+1000 VICTORY BONUS!</p>
-        <button id="endless-button">ENTER ENDLESS MODE <span>★</span></button>
-      </section>
-
-      <!-- Панель Магазина скинов -->
+      <!-- Модальное окно магазина скинов -->
       <section id="shop-panel" class="panel">
         <div class="shop-header">
-          <h2>SKIN ARSENAL</h2>
-          <p id="shop-coins-display">COINS: 0000</p>
+          <h2>МАГАЗИН СКИНОВ</h2>
+          <p id="shop-coins-display">💰 0 МОНЕТ</p>
         </div>
-        <div id="skins-grid" class="skins-grid"></div>
-        <button id="close-shop-btn" class="secondary-btn">CLOSE ✕</button>
+        <div id="skins-grid" class="skins-grid">
+          <!-- Карточки скинов создаются динамически -->
+        </div>
+        <button id="shop-close-btn">ЗАКРЫТЬ</button>
       </section>
 
-      <!-- Игровой фидбек -->
       <div id="feedback" class="feedback" aria-live="assertive"></div>
-      <p class="tap-hint">TAP ANYWHERE TO JUMP</p>
+      <p class="tap-hint">НАЖМИТЕ ДЛЯ ПРЫЖКА</p>
     </main>
     <script type="module" src="/src/game.ts"></script>
   </body>
