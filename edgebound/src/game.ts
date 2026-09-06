@@ -148,9 +148,14 @@ const TRANSLATIONS = {
 // ============================================================================
 // 2. АУДИОСИСТЕМА (Web Audio API)
 // ============================================================================
+// ============================================================================
+// 2. АУДИОСИСТЕМА С ПРОЦЕДУРНЫМ ЭМБИЕНТОМ (Web Audio API)
+// ============================================================================
 class AudioEngine {
     private ctx: AudioContext | null = null;
     public isMuted: boolean = false;
+    private ambientGain: GainNode | null = null;
+    private ambientOscs: OscillatorNode[] = [];
 
     constructor() {
         const unlock = () => {
@@ -161,11 +166,42 @@ class AudioEngine {
             if (this.ctx.state === 'suspended' && !this.isMuted) {
                 this.ctx.resume();
             }
+            this.startAmbient();
             window.removeEventListener('pointerdown', unlock);
             window.removeEventListener('keydown', unlock);
         };
         window.addEventListener('pointerdown', unlock, { passive: true });
         window.addEventListener('keydown', unlock, { passive: true });
+    }
+
+    /**
+     * Мягкий неоновый эмбиент (C-minor chord), создающий атмосферу парения
+     */
+    public startAmbient(): void {
+        if (!this.ctx || this.ambientGain) return;
+        try {
+            const now = this.ctx.currentTime;
+            this.ambientGain = this.ctx.createGain();
+            this.ambientGain.gain.setValueAtTime(0.045, now); // Тихий медитативный фон
+
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(280, now);
+
+            // Космический аккорд: C3, G3, D4, Eb4
+            const freqs = [130.81, 196.00, 293.66, 311.13];
+            this.ambientOscs = freqs.map((f, i) => {
+                const osc = this.ctx!.createOscillator();
+                osc.type = i % 2 === 0 ? 'sine' : 'triangle';
+                osc.frequency.setValueAtTime(f, now);
+                osc.connect(filter);
+                osc.start(now);
+                return osc;
+            });
+
+            filter.connect(this.ambientGain);
+            this.ambientGain.connect(this.ctx.destination);
+        } catch (e) {}
     }
 
     public setMuted(muted: boolean): void {
@@ -184,14 +220,11 @@ class AudioEngine {
         const now = this.ctx.currentTime;
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
-
         osc.type = 'sine';
         osc.frequency.setValueAtTime(150, now);
         osc.frequency.exponentialRampToValueAtTime(480, now + 0.12);
-
         gain.gain.setValueAtTime(0.35, now);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-
         osc.connect(gain);
         gain.connect(this.ctx.destination);
         osc.start(now);
@@ -203,14 +236,11 @@ class AudioEngine {
         const now = this.ctx.currentTime;
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
-
         osc.type = 'sine';
         osc.frequency.setValueAtTime(320, now);
         osc.frequency.exponentialRampToValueAtTime(540, now + 0.09);
-
         gain.gain.setValueAtTime(0.3, now);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
-
         osc.connect(gain);
         gain.connect(this.ctx.destination);
         osc.start(now);
@@ -222,14 +252,11 @@ class AudioEngine {
         const now = this.ctx.currentTime;
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
-
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(95, now);
         osc.frequency.exponentialRampToValueAtTime(25, now + 0.35);
-
         gain.gain.setValueAtTime(0.45, now);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-
         osc.connect(gain);
         gain.connect(this.ctx.destination);
         osc.start(now);
@@ -239,16 +266,13 @@ class AudioEngine {
     public playLanding(isPerfect: boolean): void {
         if (this.isMuted || !this.ctx || this.ctx.state !== 'running') return;
         const now = this.ctx.currentTime;
-
         const bassOsc = this.ctx.createOscillator();
         const bassGain = this.ctx.createGain();
         bassOsc.type = 'triangle';
         bassOsc.frequency.setValueAtTime(110, now);
         bassOsc.frequency.exponentialRampToValueAtTime(35, now + 0.18);
-
         bassGain.gain.setValueAtTime(0.4, now);
         bassGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
-
         bassOsc.connect(bassGain);
         bassGain.connect(this.ctx.destination);
         bassOsc.start(now);
@@ -277,21 +301,17 @@ class AudioEngine {
         const now = this.ctx.currentTime;
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
-
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(160, now);
         osc.frequency.exponentialRampToValueAtTime(35, now + 0.35);
-
         gain.gain.setValueAtTime(0.3, now);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-
         osc.connect(gain);
         gain.connect(this.ctx.destination);
         osc.start(now);
         osc.stop(now + 0.35);
     }
 }
-
 // ============================================================================
 // 3. МОСТ ЯНДЕКС ИГР (Yandex SDK)
 // ============================================================================
