@@ -1,11 +1,12 @@
 /**
- * EDGEBOUND — MASTER GAME ENGINE
- * Включает:
- * 1. Кнопку звука (🔊/🔇) и глушение по требованиям Яндекс Игр.
- * 2. Мета-прогрессию: магазин скинов за монеты с сохранением в Яндекс Облако.
- * 3. Неоновый шлейф прыжка (Jump Trail) и золотую вспышку на Perfect.
- * 4. Стратифицированный органичный ветер (0 наслоений!).
- * 5. FSM, честный тайминг в 05+, наглядный RISK_SPLIT и 24 сектора.
+ * EDGEBOUND — MASTER PRODUCTION ENGINE
+ * Полная версия:
+ * 1. Мгновенный прыжок и старт по клику/тапу в любой точке экрана и по Пробелу.
+ * 2. Разделение кнопок звука/магазина со сбросом фокуса (Пробел всегда прыгает).
+ * 3. Органичный ветер без наслоений (18 раздельных эшелонов высоты).
+ * 4. Магазин скинов за монеты + сохранение в Яндекс Облако.
+ * 5. Неоновый шлейф прыжка, золотая вспышка на Perfect, реклама со звуковой паузой.
+ * 6. Выверенная кампания 01-24 с таймингами и наглядным выбором в RISK_SPLIT.
  */
 
 // ============================================================================
@@ -552,7 +553,6 @@ class VFXSystem {
     public draw(ctx: CanvasRenderingContext2D): void {
         ctx.save();
 
-        // 1. Шлейф прыжка персонажа
         for (const t of this.trails) {
             ctx.save();
             ctx.translate(t.x + t.width / 2, t.y + t.height);
@@ -562,7 +562,6 @@ class VFXSystem {
             ctx.restore();
         }
 
-        // 2. Кольца шоквейва
         for (const s of this.shockwaves) {
             ctx.save();
             ctx.strokeStyle = s.color;
@@ -574,7 +573,6 @@ class VFXSystem {
             ctx.restore();
         }
 
-        // 3. Частицы
         for (const p of this.particles) {
             ctx.save();
             ctx.fillStyle = p.color;
@@ -666,7 +664,7 @@ export class GameApp {
     private resultTitle = document.getElementById('result-title')!;
     private resultReward = document.getElementById('result-reward')!;
 
-    // FSM и пауза
+    // FSM
     private gameState: GameState = 'MENU';
     private previousState: GameState = 'MENU';
     private isTransitioning: boolean = false;
@@ -679,7 +677,7 @@ export class GameApp {
     private currentSector = 1;
     private currentSeed = 1001;
 
-    // Мета-прогрессия (Скины)
+    // Мета-прогрессия
     private unlockedSkins: string[] = ['cyan'];
     private equippedSkinId: string = 'cyan';
 
@@ -701,7 +699,7 @@ export class GameApp {
     // Физика
     private readonly GRAVITY = 1250;
     private readonly JUMP_POWER = -560;
-    private readonly AIRTIME = (2 * 560) / 1250; // 0.896 с
+    private readonly AIRTIME = (2 * 560) / 1250;
     private readonly HORIZONTAL_SPEED = 340;
 
     // Сцена
@@ -710,11 +708,11 @@ export class GameApp {
     private stepProgress = 0;
     private stepTotal = 1;
 
-    // Привязка
+    // Привязка кубика
     private attachedPlatform: Platform | null = null;
     private platformOffsetX = 0;
 
-    // ✅ СТРАТИФИЦИРОВАННЫЙ ВЕТЕР: 18 эшелонов с шагом >= 18px (0 наслоений!)
+    // Ветер (18 эшелонов с зазором >= 18px)
     private wind = { direction: 1, strength: 0, current: 0 };
     private smoothWind = 0;
     private readonly TOTAL_WIND_SLOTS = 18;
@@ -740,6 +738,9 @@ export class GameApp {
         this.initResize();
         this.initStratifiedWind();
         this.bindEvents();
+
+        // Синхронная подготовка первого сектора
+        this.loadSector(this.currentSector, this.currentSeed);
         this.setupYandexSDK();
 
         requestAnimationFrame((t) => this.loop(t));
@@ -763,7 +764,6 @@ export class GameApp {
             if (saved.equippedSkin) this.equippedSkinId = saved.equippedSkin;
         }
 
-        // Сохранение настроек звука
         const savedMute = localStorage.getItem('edgebound_muted') === 'true';
         this.audio.setMuted(savedMute);
         this.soundBtn.textContent = savedMute ? '🔇' : '🔊';
@@ -803,10 +803,6 @@ export class GameApp {
         resize();
     }
 
-    /**
-     * ✅ СТРАТИФИКАЦИЯ ЭШЕЛОНОВ ВЕТРА (0 наслоений!):
-     * Каждая полоса живет строго в своем высотном эшелоне.
-     */
     private initStratifiedWind(): void {
         this.windParticles = [];
         const yStart = 65;
@@ -831,55 +827,57 @@ export class GameApp {
     }
 
     private handleAction(): void {
-        if (this.isTransitioning || this.isPausedForAd) return;
+        if (this.isPausedForAd || this.gameState === 'SHOP') return;
 
         if (this.gameState === 'MENU') {
             this.startRound();
+            this.jump();
         } else if (this.gameState === 'RUNNING') {
             this.jump();
         } else if (this.gameState === 'RESULT_SUCCESS') {
+            if (this.isTransitioning) return;
             this.nextChallenge();
         } else if (this.gameState === 'RESULT_FAILED') {
+            if (this.isTransitioning) return;
             this.retrySameChallenge();
         }
     }
 
     private bindEvents(): void {
-        this.canvas.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
+        // Глобальный перехват ввода по экрану (с защитой от кнопок)
+        window.addEventListener('pointerdown', (e) => {
+            const target = e.target as HTMLElement | null;
+            if (target && (target.closest('.hud-controls, #shop-panel') || target.id === 'sound-btn' || target.id === 'shop-btn')) {
+                return;
+            }
+            (document.activeElement as HTMLElement)?.blur();
             this.handleAction();
         });
 
+        // Пробел и стрелка вверх всегда прыгают
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space' || e.code === 'ArrowUp') {
                 e.preventDefault();
+                (document.activeElement as HTMLElement)?.blur();
                 this.handleAction();
             }
         });
 
-        this.startButton.addEventListener('pointerdown', (e) => {
-            e.stopPropagation();
-            this.handleAction();
-        });
-
-        this.retryButton.addEventListener('pointerdown', (e) => {
-            e.stopPropagation();
-            this.handleAction();
-        });
-
-        // ✅ Кнопка переключения звука
+        // Кнопка звука
         this.soundBtn.addEventListener('pointerdown', (e) => {
             e.stopPropagation();
             const newMuted = !this.audio.isMuted;
             this.audio.setMuted(newMuted);
             this.soundBtn.textContent = newMuted ? '🔇' : '🔊';
             localStorage.setItem('edgebound_muted', String(newMuted));
+            (this.soundBtn as HTMLElement).blur();
         });
 
-        // ✅ Кнопка магазина
+        // Кнопка магазина
         this.shopBtn.addEventListener('pointerdown', (e) => {
             e.stopPropagation();
             this.openShop();
+            (this.shopBtn as HTMLElement).blur();
         });
 
         this.shopCloseBtn.addEventListener('pointerdown', (e) => {
@@ -887,7 +885,7 @@ export class GameApp {
             this.closeShop();
         });
 
-        // Пауза и глушение звука при сворачивании вкладки
+        // Пауза при скрытии вкладки
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
                 this.audio.setMuted(true);
@@ -907,9 +905,6 @@ export class GameApp {
         });
     }
 
-    // ========================================================================
-    // МАГАЗИН СКИНОВ (МЕТА-ПРОГРЕССИЯ)
-    // ========================================================================
     private openShop(): void {
         if (this.gameState === 'RUNNING') {
             this.previousState = 'RUNNING';
@@ -999,17 +994,23 @@ export class GameApp {
     }
 
     private startRound(): void {
-        if (this.isTransitioning) return;
-        this.isTransitioning = true;
-
         this.clearFeedback();
         this.startPanel.classList.remove('visible');
         this.resultPanel.classList.remove('visible');
         this.gameState = 'RUNNING';
+    }
 
-        setTimeout(() => {
-            this.isTransitioning = false;
-        }, 150);
+    private jump(): void {
+        if (!this.player.grounded) return;
+
+        this.player.grounded = false;
+        this.attachedPlatform = null;
+        this.player.vy = this.JUMP_POWER;
+
+        this.player.scaleX = 0.72;
+        this.player.scaleY = 1.35;
+        this.audio.playJump();
+        this.vfx.spawnDust(this.player.x + this.player.width / 2, this.player.y + this.player.height, 10);
     }
 
     private getPatternForSector(sec: number): { type: PatternType; title: string } {
@@ -1368,7 +1369,7 @@ export class GameApp {
         this.windArrow.innerText = this.smoothWind >= 0 ? '→' : '←';
         this.windFill.style.width = `${Math.min(100, Math.max(15, (absWind / 65) * 100))}%`;
 
-        // ✅ ДВИЖЕНИЕ ВЕТРА БЕЗ НАСЛОЕНИЙ
+        // Движение ветра
         const windFlowSpeed = this.smoothWind * 2.2;
         const windDir = this.smoothWind >= 0 ? 1 : -1;
 
@@ -1395,7 +1396,7 @@ export class GameApp {
             }
         }
 
-        // Обновление платформ
+        // Платформы
         for (const p of this.platforms) {
             if (p.baseX !== undefined && p.amplitude && p.speed) {
                 const ph = p.phase || 0;
@@ -1417,7 +1418,7 @@ export class GameApp {
             }
         }
 
-        // Физика и шлейф игрока
+        // Физика и шлейф
         if (this.player.grounded && this.attachedPlatform) {
             this.player.x = this.attachedPlatform.x + this.platformOffsetX;
             this.player.y = this.attachedPlatform.y + this.attachedPlatform.springY - this.player.height;
@@ -1428,7 +1429,6 @@ export class GameApp {
             this.player.x += this.player.vx * effectiveDt;
             this.player.y += this.player.vy * effectiveDt;
 
-            // ✅ Добавление неонового шлейфа в воздухе
             this.trailTimer += effectiveDt;
             if (this.trailTimer >= 0.03) {
                 this.trailTimer = 0;
@@ -1536,7 +1536,7 @@ export class GameApp {
             this.timeScale = 0.18;
             this.targetTimeScale = 1.0;
             this.camera.targetZoom = 1.08;
-            this.flashAlpha = 0.3; // ✅ Золотая вспышка на Perfect
+            this.flashAlpha = 0.3;
             setTimeout(() => { this.camera.targetZoom = 1.0; }, 300);
 
             this.shake = 9;
@@ -1736,7 +1736,7 @@ export class GameApp {
         // 3. VFX и Шлейф прыжка
         this.vfx.draw(this.ctx);
 
-        // 4. Игрок с надетым скином
+        // 4. Игрок со скином
         const p = this.player;
         const skin = this.currentSkin;
         this.ctx.save();
@@ -1753,9 +1753,9 @@ export class GameApp {
         this.ctx.fillRect(p.width / 2 - 10, -p.height + 8, 6, 6);
         this.ctx.restore();
 
-        this.ctx.restore(); // Сброс камеры
+        this.ctx.restore();
 
-        // 5. Золотая вспышка на Perfect
+        // 5. Вспышка Perfect
         if (this.flashAlpha > 0) {
             this.ctx.save();
             this.ctx.fillStyle = `rgba(251, 191, 36, ${this.flashAlpha})`;
